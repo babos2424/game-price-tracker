@@ -6,9 +6,8 @@
   <title>Oyun Fiyat Takip</title>
   <style>
     body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0b1020;color:#e5e7eb}
-    .wrap{max-width:1000px;margin:0 auto;padding:28px}
-    h1{margin:0 0 10px;font-size:34px;color:#fff;text-align:center}
-    .sub{margin:0 0 18px;color:#94a3b8;text-align:center}
+    .wrap{max-width:1100px;margin:0 auto;padding:28px}
+    h1{margin:0 0 20px;font-size:36px;color:#fff;text-align:center}
     .bar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:18px 0}
     input,select,button{
       background:#111c33;border:1px solid #22314f;color:#e5e7eb;
@@ -31,13 +30,12 @@
 <body>
   <div class="wrap">
     <h1>Oyun Fiyat Takip</h1>
-    <p class="sub">Steam en çok satılanlar (free hariç) — Worker’dan canlı çekiliyor</p>
 
     <div class="bar">
       <select id="cc">
-        <option value="tr" selected>Türkiye (TRY)</option>
-        <option value="us">USA (USD)</option>
-        <option value="de">Germany (EUR)</option>
+        <option value="tr" selected>Türkiye</option>
+        <option value="us">USA</option>
+        <option value="de">Germany</option>
       </select>
 
       <select id="limit">
@@ -46,11 +44,11 @@
         <option value="200">200 oyun</option>
       </select>
 
-      <input id="q" placeholder="Ara: gta, resident, fifa..." />
+      <input id="q" placeholder="Oyun ara..." />
       <button id="load">Yükle</button>
     </div>
 
-    <div id="status" class="status">Hazır.</div>
+    <div id="status" class="status"></div>
     <div id="grid" class="grid"></div>
   </div>
 
@@ -75,7 +73,7 @@
           <div class="title">${escapeHtml(g.name || "")}</div>
           <div class="price">${escapeHtml(g.price_text || "")}</div>
           <div class="meta">AppID: ${g.appid}</div>
-          <a class="btn" href="${g.store_url}" target="_blank" rel="noopener">Steam’de Aç</a>
+          <a class="btn" href="${g.store_url}" target="_blank">Steam'de Aç</a>
         `;
         elGrid.appendChild(div);
       }
@@ -97,41 +95,27 @@
       elStatus.textContent = "Yükleniyor...";
       elGrid.innerHTML = "";
 
-      const url = `${WORKER_BASE}/topsellers?limit=${encodeURIComponent(limit)}&cc=${encodeURIComponent(cc)}`;
+      const url = `${WORKER_BASE}/topsellers?limit=${limit}&cc=${cc}`;
 
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
+      const res = await fetch(url);
+      const data = await res.json();
 
-        if (!data.ok) {
-          elStatus.textContent = "Hata: " + (data.error || "Bilinmeyen");
-          return;
-        }
-
-        allGames = data.games || [];
-        elStatus.textContent = `Yüklendi: ${allGames.length} oyun (cc=${data.cc})`;
-
-        applySearch();
-      } catch (e) {
-        elStatus.textContent = "Fetch hatası (CORS olabilir): " + e.toString();
-      }
+      allGames = data.games || [];
+      elStatus.textContent = `${allGames.length} oyun yüklendi`;
+      render(allGames);
     }
 
     function applySearch() {
       const q = (elQ.value || "").trim().toLowerCase();
-      if (!q) {
-        render(allGames);
-        return;
-      }
-      const filtered = allGames.filter(x => (x.name || "").toLowerCase().includes(q));
+      const filtered = allGames.filter(x =>
+        (x.name || "").toLowerCase().includes(q)
+      );
       render(filtered);
-      elStatus.textContent = `Filtre: ${filtered.length} / ${allGames.length}`;
     }
 
     elLoad.addEventListener("click", load);
     elQ.addEventListener("input", applySearch);
 
-    // sayfa açılınca otomatik yükle
     load();
   </script>
 </body>
