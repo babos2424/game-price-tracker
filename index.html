@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Oyun Fiyat Takip</title>
+
 <style>
   body{background:#111;color:#fff;font-family:Arial;text-align:center;padding:40px}
   .wrap{max-width:1100px;margin:0 auto}
@@ -11,18 +12,16 @@
   .card{background:#1c1c1c;padding:18px;border-radius:14px}
   .name{margin:0 0 8px;font-size:18px}
   .price{font-size:20px;font-weight:700;margin:8px 0}
-  .muted{opacity:.75;font-size:13px;margin:8px 0}
   .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#222;margin:6px 0;font-size:13px}
   .cheap{outline:2px solid #22c55e}
   button{margin-top:10px;padding:8px 12px;border:none;border-radius:10px;cursor:pointer}
 </style>
 </head>
+
 <body>
 <div class="wrap">
   <h1>Oyun Fiyat Takip</h1>
-  <p class="muted">Steam en çok oynanan ilk 100 oyun otomatik çekilir.</p>
   <div id="game-list" class="grid"></div>
-  <p id="status" class="muted"></p>
 </div>
 
 <script>
@@ -42,19 +41,13 @@ function priceToNumber(text){
 }
 
 async function loadTopGames(){
-  const status = document.getElementById("status");
   const container = document.getElementById("game-list");
   container.innerHTML = "";
-  status.textContent = "Top liste çekiliyor...";
 
-  // 1) Top list
   const topRes = await fetch(`${API}/top?limit=${LIMIT}`, { cache: "no-store" });
   const topData = await topRes.json();
   const games = topData?.games ?? [];
 
-  status.textContent = `Top ${games.length} oyun alındı. Fiyatlar çekiliyor...`;
-
-  // 2) Batch price fetch
   const all = [];
   for (let i=0;i<games.length;i+=BATCH){
     const chunk = games.slice(i, i+BATCH);
@@ -72,11 +65,8 @@ async function loadTopGames(){
         discount_pct: p?.discount_pct ?? 0
       });
     }
-
-    status.textContent = `Fiyatlar çekiliyor... (${Math.min(i+BATCH, games.length)}/${games.length})`;
   }
 
-  // 3) Sort cheapest first
   all.sort((a,b)=>{
     if(a.steam_price_num == null && b.steam_price_num == null) return a.name.localeCompare(b.name);
     if(a.steam_price_num == null) return 1;
@@ -86,8 +76,6 @@ async function loadTopGames(){
 
   const cheapest = all.find(x => x.steam_price_num != null)?.appid ?? null;
 
-  // 4) Render
-  container.innerHTML = "";
   for (const game of all){
     const card = document.createElement("div");
     card.className = "card" + (game.appid === cheapest ? " cheap" : "");
@@ -106,11 +94,10 @@ async function loadTopGames(){
     `;
     container.appendChild(card);
   }
-
-  status.textContent = `Toplam ${all.length} oyun yüklendi.`;
 }
 
 loadTopGames();
 </script>
+
 </body>
 </html>
