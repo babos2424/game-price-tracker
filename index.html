@@ -4,34 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Oyun Fiyat Takip</title>
-
 <style>
   body{background:#111;color:#fff;font-family:Arial;text-align:center;padding:40px}
-  .wrap{max-width:900px;margin:0 auto}
+  .wrap{max-width:1100px;margin:0 auto}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:22px}
-  .card{background:#1c1c1c;padding:20px;border-radius:14px}
-  .name{margin:0 0 10px;font-size:20px}
-  .price{font-size:22px;font-weight:700;margin:8px 0}
-  .muted{opacity:.75;font-size:13px;margin:0}
+  .card{background:#1c1c1c;padding:18px;border-radius:14px}
+  .name{margin:0 0 8px;font-size:18px}
+  .price{font-size:20px;font-weight:700;margin:8px 0}
+  .muted{opacity:.75;font-size:13px;margin:8px 0}
   .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#222;margin:6px 0;font-size:13px}
   .cheap{outline:2px solid #22c55e}
   button{margin-top:10px;padding:8px 12px;border:none;border-radius:10px;cursor:pointer}
 </style>
 </head>
-
 <body>
-  <div class="wrap">
-    <h1>Oyun Fiyat Takip</h1>
-    <p class="muted">En ucuz oyunlar üstte listelenir.</p>
-    <div id="game-list" class="grid"></div>
-    <p id="status" class="muted"></p>
-  </div>
+<div class="wrap">
+  <h1>Oyun Fiyat Takip</h1>
+  <p class="muted">Steam en çok oynanan ilk 100 oyun otomatik çekilir.</p>
+  <div id="game-list" class="grid"></div>
+  <p id="status" class="muted"></p>
+</div>
 
 <script>
 const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
+const LIMIT = 100;
+const BATCH = 20;
 
 function priceToNumber(text){
-  if(!text) return null;                // "29.99 USD"
+  if(!text) return null;
   const s = String(text).replace(/\s/g,"");
   const only = s.replace(/[^0-9,\.]/g,"");
   const normalized = only.includes(",") && !only.includes(".")
@@ -41,41 +41,54 @@ function priceToNumber(text){
   return Number.isFinite(n) ? n : null;
 }
 
-async function loadGames(){
-  const container = document.getElementById("game-list");
+async function loadTopGames(){
   const status = document.getElementById("status");
+  const container = document.getElementById("game-list");
   container.innerHTML = "";
-  status.textContent = "Yükleniyor...";
+  status.textContent = "Top liste çekiliyor...";
 
-  const res = await fetch("/games.json", { cache: "no-store" });
-  const games = await res.json();
+  // 1) Top list
+  const topRes = await fetch(`${API}/top?limit=${LIMIT}`, { cache: "no-store" });
+  const topData = await topRes.json();
+  const games = topData?.games ?? [];
 
-  const list = [];
-  for (const game of games){
-    const r = await fetch(`${API}/steam-price?appid=${game.steam_appid}`, { cache: "no-store" });
-    const data = await r.json();
+  status.textContent = `Top ${games.length} oyun alındı. Fiyatlar çekiliyor...`;
 
-    list.push({
-      name: game.name,
-      appid: game.steam_appid,
-      steam_price_text: data.steam_price ?? null,
-      steam_price_num: priceToNumber(data.steam_price),
-      discount_pct: data.discount_pct ?? 0
-    });
+  // 2) Batch price fetch
+  const all = [];
+  for (let i=0;i<games.length;i+=BATCH){
+    const chunk = games.slice(i, i+BATCH);
+    const appids = chunk.map(x => x.steam_appid).join(",");
+    const r = await fetch(`${API}/steam-prices?appids=${encodeURIComponent(appids)}`, { cache: "no-store" });
+    const d = await r.json();
+
+    for (const g of chunk){
+      const p = d?.results?.[g.steam_appid];
+      all.push({
+        name: g.name,
+        appid: g.steam_appid,
+        steam_price_text: p?.steam_price ?? null,
+        steam_price_num: priceToNumber(p?.steam_price),
+        discount_pct: p?.discount_pct ?? 0
+      });
+    }
+
+    status.textContent = `Fiyatlar çekiliyor... (${Math.min(i+BATCH, games.length)}/${games.length})`;
   }
 
-  // En ucuz üstte (fiyatı olanlar önce, sonra fiyatı olmayanlar)
-  list.sort((a,b)=>{
+  // 3) Sort cheapest first
+  all.sort((a,b)=>{
     if(a.steam_price_num == null && b.steam_price_num == null) return a.name.localeCompare(b.name);
     if(a.steam_price_num == null) return 1;
     if(b.steam_price_num == null) return -1;
     return a.steam_price_num - b.steam_price_num;
   });
 
-  // En ucuzu yeşil çerçeve
-  const cheapest = list.find(x => x.steam_price_num != null)?.appid ?? null;
+  const cheapest = all.find(x => x.steam_price_num != null)?.appid ?? null;
 
-  for (const game of list){
+  // 4) Render
+  container.innerHTML = "";
+  for (const game of all){
     const card = document.createElement("div");
     card.className = "card" + (game.appid === cheapest ? " cheap" : "");
 
@@ -91,15 +104,13 @@ async function loadGames(){
         <button>Steam Sayfası</button>
       </a>
     `;
-
     container.appendChild(card);
   }
 
-  status.textContent = `Toplam ${list.length} oyun yüklendi.`;
+  status.textContent = `Toplam ${all.length} oyun yüklendi.`;
 }
 
-loadGames();
+loadTopGames();
 </script>
-
 </body>
 </html>
