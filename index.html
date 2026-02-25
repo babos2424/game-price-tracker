@@ -26,7 +26,7 @@
 
 <script>
 const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
-const LIMIT = 100;
+const LIMIT = 500;   // ✅ 500
 const BATCH = 20;
 
 function priceToNumber(text){
@@ -44,37 +44,41 @@ async function loadTopGames(){
   const container = document.getElementById("game-list");
   container.innerHTML = "";
 
+  // ✅ Top sellers (free filtreli geliyor)
   const topRes = await fetch(`${API}/top?limit=${LIMIT}`, { cache: "no-store" });
   const topData = await topRes.json();
   const games = topData?.games ?? [];
 
   const all = [];
+
   for (let i=0;i<games.length;i+=BATCH){
     const chunk = games.slice(i, i+BATCH);
     const appids = chunk.map(x => x.steam_appid).join(",");
-    const r = await fetch(`${API}/steam-prices?appids=${encodeURIComponent(appids)}`, { cache: "no-store" });
+
+    const r = await fetch(`${API}/steam-prices?appids=${appids}`, { cache: "no-store" });
     const d = await r.json();
 
     for (const g of chunk){
       const p = d?.results?.[g.steam_appid];
+
+      const priceText = p?.steam_price ?? null;
+      // ✅ fiyat yoksa hiç listeye ekleme
+      if (!priceText) continue;
+
       all.push({
         name: g.name,
         appid: g.steam_appid,
-        steam_price_text: p?.steam_price ?? null,
-        steam_price_num: priceToNumber(p?.steam_price),
+        steam_price_text: priceText,
+        steam_price_num: priceToNumber(priceText),
         discount_pct: p?.discount_pct ?? 0
       });
     }
   }
 
-  all.sort((a,b)=>{
-    if(a.steam_price_num == null && b.steam_price_num == null) return a.name.localeCompare(b.name);
-    if(a.steam_price_num == null) return 1;
-    if(b.steam_price_num == null) return -1;
-    return a.steam_price_num - b.steam_price_num;
-  });
+  // En ucuz üstte
+  all.sort((a,b)=> (a.steam_price_num ?? 1e18) - (b.steam_price_num ?? 1e18));
 
-  const cheapest = all.find(x => x.steam_price_num != null)?.appid ?? null;
+  const cheapest = all[0]?.appid ?? null;
 
   for (const game of all){
     const card = document.createElement("div");
@@ -87,7 +91,7 @@ async function loadTopGames(){
     card.innerHTML = `
       <h2 class="name">${game.name}</h2>
       ${discountHtml}
-      <div class="price">${game.steam_price_text ?? "Fiyat bulunamadı"}</div>
+      <div class="price">${game.steam_price_text}</div>
       <a href="https://store.steampowered.com/app/${game.appid}/" target="_blank" rel="noopener">
         <button>Steam Sayfası</button>
       </a>
