@@ -6,69 +6,96 @@
 <title>Oyun Fiyat Takip</title>
 
 <style>
-body {
-  background:#111;
-  color:white;
-  font-family:Arial;
-  text-align:center;
-  padding:40px;
-}
-.card {
-  background:#1c1c1c;
-  padding:20px;
-  margin:15px auto;
-  width:300px;
-  border-radius:12px;
-}
-.price {
-  font-size:20px;
-  margin-top:10px;
-}
-button {
-  margin-top:10px;
-  padding:8px 12px;
-  border:none;
-  border-radius:8px;
-  cursor:pointer;
-}
+  body{background:#111;color:#fff;font-family:Arial;text-align:center;padding:40px}
+  .wrap{max-width:900px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:22px}
+  .card{background:#1c1c1c;padding:20px;border-radius:14px}
+  .name{margin:0 0 10px;font-size:20px}
+  .price{font-size:22px;font-weight:700;margin:8px 0}
+  .muted{opacity:.75;font-size:13px;margin:0}
+  .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#222;margin:6px 0;font-size:13px}
+  .cheap{outline:2px solid #22c55e}
+  button{margin-top:10px;padding:8px 12px;border:none;border-radius:10px;cursor:pointer}
 </style>
 </head>
 
 <body>
-
-<h1>Oyun Fiyat Takip</h1>
-
-<div id="game-list"></div>
+  <div class="wrap">
+    <h1>Oyun Fiyat Takip</h1>
+    <p class="muted">En ucuz oyunlar üstte listelenir.</p>
+    <div id="game-list" class="grid"></div>
+    <p id="status" class="muted"></p>
+  </div>
 
 <script>
 const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
 
-async function loadGames() {
-  const res = await fetch("/games.json");
-  const games = await res.json();
+function priceToNumber(text){
+  if(!text) return null;                // "29.99 USD"
+  const s = String(text).replace(/\s/g,"");
+  const only = s.replace(/[^0-9,\.]/g,"");
+  const normalized = only.includes(",") && !only.includes(".")
+    ? only.replace(",", ".")
+    : only.replace(/,/g,"");
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function loadGames(){
   const container = document.getElementById("game-list");
+  const status = document.getElementById("status");
   container.innerHTML = "";
+  status.textContent = "Yükleniyor...";
 
-  for (const game of games) {
+  const res = await fetch("/games.json", { cache: "no-store" });
+  const games = await res.json();
 
-    const priceRes = await fetch(API + "/steam-price?appid=" + game.steam_appid);
-    const data = await priceRes.json();
+  const list = [];
+  for (const game of games){
+    const r = await fetch(`${API}/steam-price?appid=${game.steam_appid}`, { cache: "no-store" });
+    const data = await r.json();
 
+    list.push({
+      name: game.name,
+      appid: game.steam_appid,
+      steam_price_text: data.steam_price ?? null,
+      steam_price_num: priceToNumber(data.steam_price),
+      discount_pct: data.discount_pct ?? 0
+    });
+  }
+
+  // En ucuz üstte (fiyatı olanlar önce, sonra fiyatı olmayanlar)
+  list.sort((a,b)=>{
+    if(a.steam_price_num == null && b.steam_price_num == null) return a.name.localeCompare(b.name);
+    if(a.steam_price_num == null) return 1;
+    if(b.steam_price_num == null) return -1;
+    return a.steam_price_num - b.steam_price_num;
+  });
+
+  // En ucuzu yeşil çerçeve
+  const cheapest = list.find(x => x.steam_price_num != null)?.appid ?? null;
+
+  for (const game of list){
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = "card" + (game.appid === cheapest ? " cheap" : "");
+
+    const discountHtml = game.discount_pct > 0
+      ? `<div class="badge">İndirim: %${game.discount_pct}</div>`
+      : `<div class="badge">İndirim yok</div>`;
 
     card.innerHTML = `
-      <h2>${game.name}</h2>
-      <div class="price">
-        ${data.steam_price ?? "Fiyat bulunamadı"}
-      </div>
-      <a href="https://store.steampowered.com/app/${game.steam_appid}/" target="_blank">
+      <h2 class="name">${game.name}</h2>
+      ${discountHtml}
+      <div class="price">${game.steam_price_text ?? "Fiyat bulunamadı"}</div>
+      <a href="https://store.steampowered.com/app/${game.appid}/" target="_blank" rel="noopener">
         <button>Steam Sayfası</button>
       </a>
     `;
 
     container.appendChild(card);
   }
+
+  status.textContent = `Toplam ${list.length} oyun yüklendi.`;
 }
 
 loadGames();
