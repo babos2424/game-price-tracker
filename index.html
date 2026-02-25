@@ -1,11 +1,42 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
-  <meta charset="UTF-8">
-  <title>GamePriceTracker</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Oyun Fiyat Takip</title>
+  <style>
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0f172a;color:#e5e7eb}
+    .wrap{max-width:900px;margin:0 auto;padding:28px}
+    h1{margin:0 0 8px;font-size:34px;color:#fff}
+    .sub{margin:0 0 18px;color:#94a3b8}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+    .card{background:#111c33;border:1px solid #223055;border-radius:14px;padding:14px}
+    .title{display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .game{font-size:18px;font-weight:700;color:#fff}
+    .badge{font-size:12px;padding:4px 8px;border-radius:999px;background:#1f2a44;border:1px solid #2b3a66}
+    .row{display:flex;justify-content:space-between;margin-top:10px;color:#cbd5e1}
+    .cheap{margin-top:12px;font-weight:700;color:#22c55e}
+    a.btn{display:inline-block;margin-top:12px;padding:10px 12px;border-radius:10px;background:#2563eb;color:#fff;text-decoration:none}
+    a.btn:hover{opacity:.9}
+  </style>
 </head>
 <body>
-  <h1>GamePriceTracker</h1>
-  <p>Site kuruluyor... 🚀</p>
+  <div class="wrap">
+    <h1>Oyun Fiyat Takip</h1>
+    <p class="sub">Steam + Epic fiyatlarını karşılaştırır. (Şimdilik demo)</p>
+
+    <div class="grid">
+      <div class="card">
+        <div class="title">
+          <div class="game">GTA V</div>
+          <div class="badge">En ucuz üste</div>
+        </div>
+        <div class="row"><span>Steam</span><span>749₺</span></div>
+        <div class="row"><span>Epic</span><span>699₺</span></div>
+        <div class="cheap">En Ucuz: Epic</div>
+        <a class="btn" href="https://store.steampowered.com/app/271590/" target="_blank">Mağazaya Git</a>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
