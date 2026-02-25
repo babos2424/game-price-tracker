@@ -1,31 +1,78 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
-  <title>Oyun Fiyat Takip</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oyun Fiyat Takip</title>
+
+<style>
+body {
+  background:#111;
+  color:white;
+  font-family:Arial;
+  text-align:center;
+  padding:40px;
+}
+.card {
+  background:#1c1c1c;
+  padding:20px;
+  margin:15px auto;
+  width:300px;
+  border-radius:12px;
+}
+.price {
+  font-size:20px;
+  margin-top:10px;
+}
+button {
+  margin-top:10px;
+  padding:8px 12px;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+}
+</style>
 </head>
-<body style="background:#111;color:white;font-family:Arial;text-align:center;padding-top:100px;">
 
-  <h1>GTA V Enhanced</h1>
+<body>
 
-  <h2 id="steam-price">Yükleniyor...</h2>
+<h1>Oyun Fiyat Takip</h1>
 
-  <script>
-    async function getSteamPrice() {
-      try {
-        const r = await fetch("https://steam-price-api.celikelbatuhan02.workers.dev/?appid=3240220&cc=tr");
-        const j = await r.json();
+<div id="game-list"></div>
 
-        document.getElementById("steam-price").innerText =
-          j.steam_price ?? "Fiyat bulunamadı";
+<script>
+const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
 
-      } catch (e) {
-        document.getElementById("steam-price").innerText = "Hata oluştu";
-      }
-    }
+async function loadGames() {
+  const res = await fetch("/games.json");
+  const games = await res.json();
+  const container = document.getElementById("game-list");
+  container.innerHTML = "";
 
-    getSteamPrice();
-  </script>
+  for (const game of games) {
+
+    const priceRes = await fetch(API + "/steam-price?appid=" + game.steam_appid);
+    const data = await priceRes.json();
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    card.innerHTML = `
+      <h2>${game.name}</h2>
+      <div class="price">
+        ${data.steam_price ?? "Fiyat bulunamadı"}
+      </div>
+      <a href="https://store.steampowered.com/app/${game.steam_appid}/" target="_blank">
+        <button>Steam Sayfası</button>
+      </a>
+    `;
+
+    container.appendChild(card);
+  }
+}
+
+loadGames();
+</script>
 
 </body>
 </html>
