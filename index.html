@@ -40,3 +40,22 @@
   </div>
 </body>
 </html>
+<script>
+  // Demo fiyatlar (sonra API'den gelecek)
+  const steamPrice = 749;
+  const epicPrice = 699;
+
+  const steamUrl = "https://store.steampowered.com/app/271590/";
+  const epicUrl  = "https://store.epicgames.com/p/grand-theft-auto-v";
+
+  const btn = document.querySelector(".btn");
+
+  // En ucuz mağazayı seç
+  const cheapestIsEpic = epicPrice < steamPrice;
+
+  if (cheapestIsEpic) {
+    btn.href = epicUrl;
+  } else {
+    btn.href = steamUrl;
+  }
+</script>
