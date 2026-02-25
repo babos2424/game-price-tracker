@@ -6,25 +6,31 @@
   <title>Oyun Fiyat Takip</title>
   <style>
     body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0b1020;color:#e5e7eb}
-    .wrap{max-width:1100px;margin:0 auto;padding:28px}
-    h1{margin:0 0 20px;font-size:36px;color:#fff;text-align:center}
+    .wrap{max-width:1200px;margin:0 auto;padding:28px}
+    h1{margin:0 0 18px;font-size:36px;color:#fff;text-align:center}
     .bar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:18px 0}
     input,select,button{
       background:#111c33;border:1px solid #22314f;color:#e5e7eb;
       padding:10px 12px;border-radius:10px;outline:none
     }
     button{cursor:pointer}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:18px}
+    .status{margin-top:10px;text-align:center;color:#94a3b8}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:18px}
     .card{background:#0f172a;border:1px solid #22314f;border-radius:14px;padding:14px}
-    .title{font-size:16px;font-weight:700;margin:0 0 8px}
-    .price{font-size:18px;font-weight:800;margin:0 0 10px}
-    .meta{color:#94a3b8;font-size:12px;margin:0 0 12px}
+    .title{font-size:16px;font-weight:800;margin:0 0 10px}
+    .row{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:8px 0}
+    .store{font-size:12px;color:#94a3b8}
+    .price{font-size:16px;font-weight:900}
+    .pill{font-size:11px;font-weight:900;padding:4px 8px;border-radius:999px;border:1px solid #22314f;color:#94a3b8}
+    .pill.best{background:#22c55e;color:#052e12;border-color:#22c55e}
+    .links{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
     a.btn{
       display:inline-block;text-decoration:none;
-      background:#22c55e;color:#052e12;font-weight:800;
-      padding:10px 12px;border-radius:10px
+      background:#111c33;border:1px solid #22314f;color:#e5e7eb;
+      font-weight:800;padding:10px 12px;border-radius:10px
     }
-    .status{margin-top:14px;text-align:center;color:#94a3b8}
+    a.btn.best{background:#22c55e;color:#052e12;border-color:#22c55e}
+    .muted{color:#94a3b8;font-size:12px}
   </style>
 </head>
 <body>
@@ -64,21 +70,6 @@
 
     let allGames = [];
 
-    function render(list) {
-      elGrid.innerHTML = "";
-      for (const g of list) {
-        const div = document.createElement("div");
-        div.className = "card";
-        div.innerHTML = `
-          <div class="title">${escapeHtml(g.name || "")}</div>
-          <div class="price">${escapeHtml(g.price_text || "")}</div>
-          <div class="meta">AppID: ${g.appid}</div>
-          <a class="btn" href="${g.store_url}" target="_blank">Steam'de Aç</a>
-        `;
-        elGrid.appendChild(div);
-      }
-    }
-
     function escapeHtml(s){
       return String(s)
         .replaceAll("&","&amp;")
@@ -88,29 +79,180 @@
         .replaceAll("'","&#39;");
     }
 
+    function parseNumFromSteamText(t){
+      // "₺ 1.999,00" -> 1999
+      if(!t) return null;
+      const cleaned = t.replace(/[^\d.,]/g, "");
+      if(!cleaned) return null;
+      const normalized = cleaned.replace(/\./g, "").replace(/,/g, ".");
+      const n = parseFloat(normalized);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function calcBest(storeA, storeB){
+      // store: {price:number|null}
+      if(storeA?.price != null && storeB?.price != null){
+        return storeA.price <= storeB.price ? "steam" : "epic";
+      }
+      if(storeA?.price != null) return "steam";
+      if(storeB?.price != null) return "epic";
+      return null;
+    }
+
+    function render(list) {
+      elGrid.innerHTML = "";
+      for (const g of list) {
+        const steamPrice = g.steam?.price_text || "-";
+        const epicText = g.epic?.text || "Yükleniyor...";
+        const best = calcBest(g.steam, g.epic);
+
+        const card = document.createElement("div");
+        card.className = "card";
+        card.id = "card-" + g.appid;
+
+        card.innerHTML = `
+          <div class="title">${escapeHtml(g.name || "")}</div>
+
+          <div class="row">
+            <div>
+              <div class="store">Steam</div>
+              <div class="price">${escapeHtml(steamPrice)}</div>
+            </div>
+            <span class="pill ${best==="steam" ? "best" : ""}">${best==="steam" ? "EN UCUZ" : ""}</span>
+          </div>
+
+          <div class="row">
+            <div>
+              <div class="store">Epic</div>
+              <div class="price" id="epic-price-${g.appid}">${escapeHtml(epicText)}</div>
+            </div>
+            <span class="pill ${best==="epic" ? "best" : ""}" id="epic-pill-${g.appid}">${best==="epic" ? "EN UCUZ" : ""}</span>
+          </div>
+
+          <div class="links">
+            <a class="btn ${best==="steam" ? "best" : ""}" href="${g.steam?.url}" target="_blank">Steam'de Aç</a>
+            <a class="btn ${best==="epic" ? "best" : ""}" id="epic-link-${g.appid}" href="#" target="_blank" style="pointer-events:none;opacity:.6">Epic'de Aç</a>
+          </div>
+
+          <div class="muted">AppID: ${g.appid}</div>
+        `;
+
+        elGrid.appendChild(card);
+      }
+    }
+
     async function load() {
       const cc = elCC.value;
       const limit = elLimit.value;
 
-      elStatus.textContent = "Yükleniyor...";
+      elStatus.textContent = "Steam listesi yükleniyor...";
       elGrid.innerHTML = "";
 
       const url = `${WORKER_BASE}/topsellers?limit=${limit}&cc=${cc}`;
-
       const res = await fetch(url);
       const data = await res.json();
 
-      allGames = data.games || [];
-      elStatus.textContent = `${allGames.length} oyun yüklendi`;
+      allGames = (data.games || []).map(x => {
+        // steam numeric price
+        const n = parseNumFromSteamText(x.steam?.price_text);
+        x.steam.price = (typeof x.steam.price === "number") ? x.steam.price : n;
+        // epic placeholder
+        x.epic = { price: null, text: "Yükleniyor...", url: null };
+        return x;
+      });
+
+      elStatus.textContent = `${allGames.length} oyun yüklendi. Epic fiyatları arkadan geliyor...`;
       render(allGames);
+      applySearch();
+
+      // Epic fiyatlarını kontrollü çek (PC’yi yormasın)
+      fetchEpicInBatches(allGames, { country: ccToCountry(cc), locale: ccToLocale(cc), concurrency: 5 });
+    }
+
+    function ccToCountry(cc){
+      if(cc==="tr") return "TR";
+      if(cc==="de") return "DE";
+      return "US";
+    }
+    function ccToLocale(cc){
+      if(cc==="tr") return "tr";
+      if(cc==="de") return "de";
+      return "en-US";
     }
 
     function applySearch() {
       const q = (elQ.value || "").trim().toLowerCase();
-      const filtered = allGames.filter(x =>
-        (x.name || "").toLowerCase().includes(q)
-      );
+      const filtered = allGames.filter(x => (x.name || "").toLowerCase().includes(q));
       render(filtered);
+      elStatus.textContent = q ? `Filtre: ${filtered.length} / ${allGames.length}` : `${allGames.length} oyun`;
+    }
+
+    async function fetchEpicInBatches(list, opts){
+      const { country, locale, concurrency } = opts;
+      let idx = 0;
+
+      async function worker(){
+        while(idx < list.length){
+          const g = list[idx++];
+          try{
+            const ep = await fetch(`${WORKER_BASE}/epicprice?keywords=${encodeURIComponent(g.name)}&country=${country}&locale=${encodeURIComponent(locale)}`).then(r=>r.json());
+
+            const epicPriceEl = document.getElementById(`epic-price-${g.appid}`);
+            const epicPillEl = document.getElementById(`epic-pill-${g.appid}`);
+            const epicLinkEl = document.getElementById(`epic-link-${g.appid}`);
+
+            if(!ep?.ok || !ep?.found){
+              g.epic = { price: null, text: "Bulunamadı", url: null };
+            } else {
+              const text = ep.epic?.discount_text || ep.epic?.original_text || "Var";
+              const price = (typeof ep.epic?.discount === "number") ? ep.epic.discount : null;
+              g.epic = { price, text, url: ep.url || null };
+            }
+
+            // UI güncelle
+            if(epicPriceEl) epicPriceEl.textContent = g.epic.text;
+
+            if(g.epic.url && epicLinkEl){
+              epicLinkEl.href = g.epic.url;
+              epicLinkEl.style.pointerEvents = "auto";
+              epicLinkEl.style.opacity = "1";
+            }
+
+            // En ucuz hesapla -> yeşil yansın
+            const best = (g.steam?.price != null && g.epic?.price != null)
+              ? (g.steam.price <= g.epic.price ? "steam" : "epic")
+              : (g.steam?.price != null ? "steam" : (g.epic?.price != null ? "epic" : null));
+
+            // Kartı yeniden render etmeyelim (kasmasın), sadece pill’leri güncelle
+            if(epicPillEl){
+              epicPillEl.className = "pill " + (best==="epic" ? "best" : "");
+              epicPillEl.textContent = (best==="epic" ? "EN UCUZ" : "");
+            }
+            // Steam pill’i de güncelle
+            const card = document.getElementById("card-" + g.appid);
+            if(card){
+              const steamPill = card.querySelector(".row .pill");
+              if(steamPill){
+                steamPill.className = "pill " + (best==="steam" ? "best" : "");
+                steamPill.textContent = (best==="steam" ? "EN UCUZ" : "");
+              }
+              // buton renkleri
+              const btns = card.querySelectorAll("a.btn");
+              if(btns && btns.length >= 2){
+                btns[0].classList.toggle("best", best==="steam");
+                btns[1].classList.toggle("best", best==="epic");
+              }
+            }
+          }catch(e){
+            // Epic takılırsa sessiz geç
+          }
+        }
+      }
+
+      const workers = [];
+      for(let i=0;i<concurrency;i++) workers.push(worker());
+      await Promise.all(workers);
+      elStatus.textContent = `Epic fiyatları yüklendi.`;
     }
 
     elLoad.addEventListener("click", load);
