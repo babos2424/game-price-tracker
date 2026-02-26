@@ -33,7 +33,6 @@ const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
 const statusEl = document.getElementById("status");
 const grid = document.getElementById("grid");
 
-// ✅ SADECE 2 OYUN
 const GAMES = [
   { title:"Red Dead Redemption 2", steam_appid: 1174180, epic_query:"Red Dead Redemption 2" },
   { title:"Grand Theft Auto V Enhanced", steam_appid: 3240220, epic_query:"Grand Theft Auto V" }
@@ -52,7 +51,6 @@ function bestStoreClass(steamFinal, epicFinal){
   if(s<=e) return {steam:true, epic:false};
   return {steam:false, epic:true};
 }
-
 function cardSkeleton(g){
   const div=document.createElement("div");
   div.className="card";
@@ -99,7 +97,6 @@ async function boot(){
     const c = cards.get(g.steam_appid);
     const [steam, epic] = await Promise.all([ getSteam(g.steam_appid), getEpicAuto(g.epic_query) ]);
 
-    // Steam render
     const steamRow = c.querySelector('[data-steam="row"]');
     if(steam?.ok){
       const disc = Number(steam?.steam?.discount||0);
@@ -110,7 +107,6 @@ async function boot(){
       steamRow.innerHTML = `<span class="pill">Steam</span> <span class="small">Bulunamadı</span>`;
     }
 
-    // Epic render
     const epicRow = c.querySelector('[data-epic="row"]');
     const epicBtn = c.querySelector('[data-epic-btn]');
     if(epic?.ok){
@@ -126,7 +122,6 @@ async function boot(){
       epicRow.innerHTML = `Epic: <span class="pill">Bulunamadı</span>`;
     }
 
-    // En ucuzu yeşil
     const best = bestStoreClass(Number(steam?.steam?.final), Number(epic?.epic?.final));
     const steamPill = c.querySelector('[data-steam="row"] .pill');
     const epicPill = c.querySelector('[data-epic="row"] .pill');
