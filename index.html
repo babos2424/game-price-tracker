@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Oyun Fiyat Takip</title>
+<title>Steam İndirimli Oyunlar</title>
 
 <style>
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
@@ -42,12 +42,19 @@ input{
   padding:8px;
   border-radius:10px;
 }
+.badge{
+  background:#22c55e;
+  padding:3px 6px;
+  border-radius:6px;
+  font-size:12px;
+  margin-left:6px;
+}
 </style>
 </head>
 
 <body>
 <div class="wrap">
-<h1>İndirimli Steam Oyunları</h1>
+<h1>Steam İndirimli Oyunlar (USD)</h1>
 
 <div class="top">
 <input id="search" placeholder="Oyun ara...">
@@ -64,80 +71,92 @@ const statusEl=document.getElementById("status");
 const search=document.getElementById("search");
 
 let all=[];
-let renderTimeout;
+let renderTimer;
 
-function money(v,c){ return Number(v).toFixed(2)+" "+c; }
+function money(v,c){
+  return Number(v).toFixed(2)+" "+c;
+}
 
-function render(){
+function addCard(g){
+  const card=document.createElement("div");
+  card.className="card";
+  card.dataset.name=g.name.toLowerCase();
+
+  card.innerHTML=`
+    <div class="title">
+      ${g.name}
+      <span class="badge">-${g.steam.discount}%</span>
+    </div>
+    <div>
+      <span class="old">${money(g.steam.initial,g.steam.currency)}</span>
+      ${money(g.steam.final,g.steam.currency)}
+    </div>
+    <a class="btn" target="_blank"
+      href="https://store.steampowered.com/app/${g.appid}">
+      Steam'e Git
+    </a>
+  `;
+
+  grid.appendChild(card);
+}
+
+function filter(){
   const q=search.value.toLowerCase().trim();
-  const list=q?all.filter(x=>x.name.toLowerCase().includes(q)):all;
+  const cards=grid.children;
 
-  grid.innerHTML="";
-  for(const g of list){
-    const card=document.createElement("div");
-    card.className="card";
-    card.innerHTML=`
-      <div class="title">${g.name}</div>
-      <div>
-        <span class="old">${money(g.steam.initial,g.steam.currency)}</span>
-        ${money(g.steam.final,g.steam.currency)}
-      </div>
-      <a class="btn" target="_blank"
-        href="https://store.steampowered.com/app/${g.appid}">
-        Steam'e Git
-      </a>
-    `;
-    grid.appendChild(card);
+  for(let i=0;i<cards.length;i++){
+    const name=cards[i].dataset.name;
+    cards[i].style.display=(!q||name.includes(q))?"block":"none";
   }
-
-  statusEl.textContent="Toplam "+list.length+" indirimli oyun";
 }
 
 search.addEventListener("input",()=>{
-  clearTimeout(renderTimeout);
-  renderTimeout=setTimeout(render,150);
+  clearTimeout(renderTimer);
+  renderTimer=setTimeout(filter,120);
 });
 
 async function load(){
+
   statusEl.textContent="Liste alınıyor...";
+
   let ids=[];
 
-  // 5 sayfa = 250 oyun
-  for(let i=0;i<5;i++){
+  // 4 sayfa = 200 oyun
+  for(let i=0;i<4;i++){
     const r=await fetch(`${API}/steam/list?start=${i*50}`);
     const j=await r.json();
     if(j.ok) ids.push(...j.appids);
   }
 
-  statusEl.textContent="İndirimli oyunlar taranıyor...";
+  statusEl.textContent="İndirimli oyunlar yükleniyor...";
 
-  // paralel hız
-  const concurrency=10;
+  const concurrency=12;
   let index=0;
 
   async function worker(){
-    while(index<ids.length && all.length<150){
+    while(index<ids.length){
       const id=ids[index++];
       const r=await fetch(`${API}/steam/price?appid=${id}`);
       const j=await r.json().catch(()=>null);
+
       if(!j||!j.ok) continue;
 
-      // DLC filtre
-      if(!j.name||!j.steam) continue;
-
-      // sadece indirimli
-      if(j.steam.discount<=0) continue;
-
       all.push(j);
+      addCard(j);
+
+      statusEl.textContent="Toplam "+all.length+" oyun";
     }
   }
 
   await Promise.all(Array(concurrency).fill(0).map(worker));
 
-  // indirim oranına göre sırala
+  // indirim yüzdesine göre sırala (yükleme sonrası)
   all.sort((a,b)=>b.steam.discount-a.steam.discount);
 
-  render();
+  grid.innerHTML="";
+  all.forEach(addCard);
+
+  statusEl.textContent="Toplam "+all.length+" indirimli oyun";
 }
 
 load();
