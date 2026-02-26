@@ -1,26 +1,81 @@
-<script>
-async function loadGames() {
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Oyun Fiyat Takip</title>
+  <style>
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0f172a;color:#e5e7eb}
+    .wrap{max-width:1000px;margin:0 auto;padding:28px}
+    h1{margin:0 0 8px;font-size:34px;color:#fff}
+    .sub{margin:0 0 18px;color:#94a3b8}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+    .card{background:#111c33;border:1px solid #223254;border-radius:12px;padding:14px}
+    .name{margin:0 0 8px;font-size:16px;color:#fff}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .price{margin:0;font-size:14px}
+    .badge{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid #2b3a57;color:#cbd5e1}
+    a{color:#93c5fd;text-decoration:none}
+    .muted{color:#94a3b8}
+    .err{color:#fca5a5}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Oyun Fiyat Takip</h1>
+    <p class="sub">Steam (Most Played) — fiyatlar USD ($)</p>
 
-  const res = await fetch("https://steam-price-api.celikelbatuhan02.workers.dev/");
-  const games = await res.json();
+    <div id="status" class="muted">Yükleniyor...</div>
+    <div id="games" class="grid"></div>
+  </div>
 
-  const container = document.getElementById("games");
-  container.innerHTML = "";
+  <script>
+    const API_URL = "https://steam-price-api.celikelbatuhan02.workers.dev/";
 
-  games.forEach(game => {
+    function fmtUSD(n) {
+      if (typeof n !== "number") return "-";
+      return "$" + n.toFixed(2);
+    }
 
-    const card = document.createElement("div");
-    card.className = "card";
+    async function loadGames() {
+      const status = document.getElementById("status");
+      const container = document.getElementById("games");
 
-    card.innerHTML = `
-      <h3>${game.name}</h3>
-      <p class="price steam">Steam: ${game.steam_price} TL</p>
-    `;
+      try {
+        const res = await fetch(API_URL, { cache: "no-store" });
+        if (!res.ok) throw new Error("API hata: " + res.status);
 
-    container.appendChild(card);
-  });
+        const data = await res.json();
+        const games = data.games || [];
 
-}
+        status.textContent = `Yüklendi: ${games.length} oyun`;
 
-loadGames();
-</script>
+        container.innerHTML = "";
+        for (const g of games) {
+          const card = document.createElement("div");
+          card.className = "card";
+
+          card.innerHTML = `
+            <p class="name">${g.name}</p>
+            <div class="row">
+              <p class="price">Steam: <b>${fmtUSD(g.steam_price)}</b></p>
+              <span class="badge">-${g.steam_discount || 0}%</span>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <span class="muted">USD</span>
+              <a href="${g.steam_url}" target="_blank" rel="noopener">Steam'e git</a>
+            </div>
+          `;
+          container.appendChild(card);
+        }
+
+      } catch (e) {
+        status.innerHTML = `<span class="err">Hata:</span> ${e.message}`;
+        container.innerHTML = "";
+      }
+    }
+
+    loadGames();
+  </script>
+</body>
+</html>
