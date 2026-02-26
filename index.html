@@ -1,4 +1,4 @@
-<!-- index.html — FIX: API base tam worker domain + hata yakala -->
+<!-- index.html (Cloudflare Pages) — Steam hızlı gelir, Epic sonradan dolar -->
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Oyun Fiyat Takip</title>
   <style>
-    :root{--bg:#0b1223;--card:#0f1b33;--card2:#0e172d;--b:#1f2d4a;--t:#e5e7eb;--m:#94a3b8}
+    :root{--bg:#0b1223;--card:#0f1b33;--card2:#0e172d;--b:#1f2d4a;--t:#e5e7eb;--m:#94a3b8;--g:#22c55e}
     *{box-sizing:border-box}
     body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#0a1020,#0b1223);color:var(--t)}
     .wrap{max-width:1100px;margin:0 auto;padding:26px}
@@ -23,7 +23,7 @@
     .title{font-size:16px;font-weight:700;margin:0 0 8px}
     .muted{color:var(--m);font-size:12px}
     .sec{margin-top:10px;padding-top:10px;border-top:1px solid rgba(148,163,184,.2)}
-    .line{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:6px 0}
+    .line{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:6px 0;padding:6px 8px;border:1px solid rgba(31,45,74,.65);border-radius:12px;background:#0b1430}
     .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--b);border-radius:999px;padding:3px 8px;font-size:12px;color:#cbd5e1;background:#0b1430}
     .btn{color:#93c5fd;text-decoration:none}
     .btn:hover{text-decoration:underline}
@@ -56,8 +56,9 @@
   </div>
 
 <script>
-const API_BASE = "https://steam-price-api.celikelbatuhan02.workers.dev"; // <- worker domain burası
-const API = (cc) => `${API_BASE}/api/games?limit=200&cc=${encodeURIComponent(cc)}`;
+const WORKER = "https://steam-price-api.celikelbatuhan02.workers.dev";
+const STEAM_API = (cc) => `${WORKER}/api/steam?limit=200&cc=${encodeURIComponent(cc)}`;
+const EPIC_API  = (cc,title) => `${WORKER}/api/epic?cc=${encodeURIComponent(cc)}&title=${encodeURIComponent(title)}`;
 
 const elGrid = document.getElementById("grid");
 const elMeta = document.getElementById("meta");
@@ -66,119 +67,168 @@ const elCC = document.getElementById("cc");
 
 let ALL = [];
 
-function moneyLine(store, s, cheapest) {
-  if (!s) return `<div class="line"><span class="pill">${store}</span><span class="small">yok</span></div>`;
-  const disc = (typeof s.discount_percent === "number" && s.discount_percent > 0) ? `<span class="tag">-${s.discount_percent}%</span>` : "";
-  let priceHtml = "";
-  if (s.final_formatted) {
-    const strike = (s.initial_formatted && s.initial_formatted !== s.final_formatted) ? `<span class="strike">${escapeHtml(s.initial_formatted)}</span>` : "";
-    priceHtml = `${strike}<span class="price">${escapeHtml(s.final_formatted)}</span> ${disc}`;
-  } else {
-    priceHtml = `<span class="small">yükleniyor / yok...</span>`;
-  }
-  const cls = cheapest ? "green" : "";
-  const link = s.url ? `<a class="btn" href="${s.url}" target="_blank" rel="noopener">Mağazaya git</a>` : `<span class="small">link yok</span>`;
-  return `
-    <div class="line ${cls}">
-      <span class="pill">${store}</span>
-      <div style="text-align:right">
-        <div>${priceHtml}</div>
-        <div>${link}</div>
-      </div>
-    </div>
-  `;
+function priceHTML(p){
+  if (!p || !p.final_formatted) return `<span class="small">yükleniyor / yok...</span>`;
+  const strike = (p.initial_formatted && p.initial_formatted !== p.final_formatted) ? `<span class="strike">${esc(p.initial_formatted)}</span>` : "";
+  const disc = (typeof p.discount_percent === "number" && p.discount_percent > 0) ? ` <span class="tag">-${p.discount_percent}%</span>` : "";
+  return `${strike}<span class="price">${esc(p.final_formatted)}</span>${disc}`;
 }
 
-function pickCheapest(steam, epic){
-  const s = (steam && typeof steam.final_amount === "number") ? steam.final_amount : null;
-  const e = (epic && typeof epic.final_amount === "number") ? epic.final_amount : null;
-  if (s == null && e == null) return { steam:false, epic:false };
-  if (s != null && e == null) return { steam:true, epic:false };
-  if (s == null && e != null) return { steam:false, epic:true };
-  if (s <= e) return { steam:true, epic:false };
-  return { steam:false, epic:true };
+function cheapest(steamFinal, epicFinal){
+  if (steamFinal == null && epicFinal == null) return {s:false,e:false};
+  if (steamFinal != null && epicFinal == null) return {s:true,e:false};
+  if (steamFinal == null && epicFinal != null) return {s:false,e:true};
+  return (steamFinal <= epicFinal) ? {s:true,e:false} : {s:false,e:true};
+}
+
+function card(g){
+  const srcTag = g.source === "topsellers" ? "En çok satılan" : "En çok oynanan";
+  const img = g.header_image ? `<img class="img" src="${g.header_image}" alt="">` : `<div class="img"></div>`;
+
+  return `
+  <div class="card" data-appid="${g.appid}">
+    <div class="topline">
+      <span class="tag">#${g.rank}</span>
+      <span class="tag">${srcTag}</span>
+    </div>
+    <div class="row">
+      ${img}
+      <div style="flex:1">
+        <div class="title">${esc(g.name)}</div>
+        <div class="muted">Steam AppID: ${g.appid}</div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="line" data-store="steam">
+        <span class="pill">Steam</span>
+        <div style="text-align:right">
+          <div data-price="steam">${priceHTML(g.steam)}</div>
+          <div><a class="btn" href="${g.steam.url}" target="_blank" rel="noopener">Mağazaya git</a></div>
+        </div>
+      </div>
+
+      <div class="line" data-store="epic">
+        <span class="pill">Epic</span>
+        <div style="text-align:right">
+          <div data-price="epic"><span class="small">yükleniyor...</span></div>
+          <div data-link="epic"><span class="small">link yok</span></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function render(list){
-  elGrid.innerHTML = list.map(g => {
-    const cheapest = pickCheapest(g.steam, (g.epic && g.epic.status==="ok") ? g.epic : null);
-    const steamBox = moneyLine("Steam", g.steam, cheapest.steam);
-
-    const epicData = (g.epic && g.epic.status==="ok") ? {
-      url: g.epic.url,
-      discount_percent: (typeof g.epic.discount_percent==="number") ? g.epic.discount_percent : 0,
-      original_formatted: g.epic.original_formatted,
-      final_formatted: g.epic.final_formatted,
-      final_amount: g.epic.final_amount,
-      initial_formatted: g.epic.original_formatted
-    } : null;
-
-    const epicBox = moneyLine("Epic", epicData, cheapest.epic);
-
-    const img = g.header_image ? `<img class="img" src="${g.header_image}" alt="">` : `<div class="img"></div>`;
-    const srcTag = g.source === "topsellers" ? "En çok satılan" : "En çok oynanan";
-
-    return `
-      <div class="card">
-        <div class="topline">
-          <span class="tag">#${g.rank}</span>
-          <span class="tag">${srcTag}</span>
-        </div>
-        <div class="row">
-          ${img}
-          <div style="flex:1">
-            <div class="title">${escapeHtml(g.name)}</div>
-            <div class="muted">Steam AppID: ${g.appid}</div>
-          </div>
-        </div>
-
-        <div class="sec">
-          ${steamBox}
-          ${epicBox}
-        </div>
-      </div>
-    `;
-  }).join("");
+  elGrid.innerHTML = list.map(card).join("");
 }
 
-async function load(){
-  elMeta.textContent = "Yükleniyor...";
+async function loadSteam(){
+  elMeta.textContent = "Steam yükleniyor...";
   elGrid.innerHTML = "";
   const cc = elCC.value;
 
-  try{
-    const res = await fetch(API(cc), { cache: "no-store" });
-    const data = await res.json();
+  const res = await fetch(STEAM_API(cc), { cache: "no-store" });
+  const data = await res.json();
+  if (!res.ok || data.ok === false) throw new Error(data?.message || ("HTTP " + res.status));
 
-    if (!res.ok || data.ok === false) {
-      throw new Error(data?.message || ("HTTP " + res.status));
-    }
+  ALL = Array.isArray(data.games) ? data.games : [];
+  applyFilter();
+  elMeta.textContent = `Tamam. ${ALL.length} oyun (Steam). Epic yükleniyor...`;
 
-    ALL = Array.isArray(data.games) ? data.games : [];
-    elMeta.textContent = `Tamam. ${ALL.length} oyun (Steam+Epic).`;
-    applyFilter();
-  }catch(err){
-    ALL = [];
-    elGrid.innerHTML = "";
-    elMeta.textContent = "Hata: " + (err?.message || err);
-  }
+  loadEpicForVisible(cc, ALL); // epic sonra doldur
 }
 
 function applyFilter(){
   const q = (elQ.value || "").trim().toLowerCase();
   const list = !q ? ALL : ALL.filter(x => (x.name||"").toLowerCase().includes(q));
   render(list);
+  elMeta.textContent = `Tamam. ${list.length} oyun (Steam). Epic yükleniyor...`;
+  loadEpicForVisible(elCC.value, list);
+}
+
+async function loadEpicForVisible(cc, list){
+  // DOM’da olan kartlar için epic çek (filtre sonrası)
+  const tasks = list.map(g => async () => {
+    const cardEl = document.querySelector(`.card[data-appid="${g.appid}"]`);
+    if (!cardEl) return;
+
+    try{
+      const r = await fetch(EPIC_API(cc, g.name), { cache: "no-store" });
+      const d = await r.json();
+      const epic = d?.epic;
+
+      const epicPriceEl = cardEl.querySelector('[data-price="epic"]');
+      const epicLinkEl  = cardEl.querySelector('[data-link="epic"]');
+
+      if (!r.ok || d.ok === false || !epic || epic.status !== "ok"){
+        epicPriceEl.innerHTML = `<span class="small">yok</span>`;
+        epicLinkEl.innerHTML = `<span class="small">link yok</span>`;
+        paintCheapest(cardEl, g.steam.final_amount, null);
+        return;
+      }
+
+      const epicNorm = {
+        final_formatted: epic.final_formatted,
+        initial_formatted: epic.original_formatted,
+        discount_percent: epic.discount_percent ?? 0,
+        final_amount: (typeof epic.final_amount === "number") ? epic.final_amount : null,
+        url: epic.url
+      };
+
+      epicPriceEl.innerHTML = priceHTML(epicNorm);
+      epicLinkEl.innerHTML = epicNorm.url
+        ? `<a class="btn" href="${epicNorm.url}" target="_blank" rel="noopener">Mağazaya git</a>`
+        : `<span class="small">link yok</span>`;
+
+      paintCheapest(cardEl, g.steam.final_amount, epicNorm.final_amount);
+
+    }catch{
+      const epicPriceEl = cardEl.querySelector('[data-price="epic"]');
+      const epicLinkEl  = cardEl.querySelector('[data-link="epic"]');
+      epicPriceEl.innerHTML = `<span class="small">hata</span>`;
+      epicLinkEl.innerHTML = `<span class="small">link yok</span>`;
+      paintCheapest(cardEl, g.steam.final_amount, null);
+    }
+  });
+
+  await pool(10, tasks);
   elMeta.textContent = `Tamam. ${list.length} oyun (Steam+Epic).`;
 }
 
-function escapeHtml(s){
+function paintCheapest(cardEl, steamFinal, epicFinal){
+  const sLine = cardEl.querySelector('.line[data-store="steam"]');
+  const eLine = cardEl.querySelector('.line[data-store="epic"]');
+  sLine.classList.remove("green");
+  eLine.classList.remove("green");
+
+  const c = cheapest(steamFinal, epicFinal);
+  if (c.s) sLine.classList.add("green");
+  if (c.e) eLine.classList.add("green");
+}
+
+function esc(s){
   return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
-elQ.addEventListener("input", () => applyFilter());
-elCC.addEventListener("change", () => load());
+async function pool(limit, tasks){
+  const exec = new Set();
+  for (const t of tasks){
+    const p = Promise.resolve().then(t);
+    exec.add(p);
+    const done = () => exec.delete(p);
+    p.then(done).catch(done);
+    if (exec.size >= limit) await Promise.race(exec);
+  }
+  await Promise.allSettled(Array.from(exec));
+}
 
-load();
+elQ.addEventListener("input", applyFilter);
+elCC.addEventListener("change", () => loadSteam());
+
+loadSteam().catch(err => {
+  elMeta.textContent = "Hata: " + (err?.message || err);
+});
 </script>
 </body>
 </html>
