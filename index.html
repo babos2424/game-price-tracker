@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Steam Oyunları (USD)</title>
+<title>Steam Oyunları (TR)</title>
 
 <style>
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
@@ -40,7 +40,7 @@ input{
 
 <body>
 <div class="wrap">
-  <h1>Steam Oyunları (USD)</h1>
+  <h1>Steam Oyunları (TR)</h1>
 
   <div class="top">
     <input id="search" placeholder="Oyun ara...">
@@ -78,8 +78,8 @@ let ordered=[];
 
 function money(v,c){
   const n = Number(v);
-  if(!Number.isFinite(n)) return "— "+(c||"USD");
-  return n.toFixed(2)+" "+(c||"USD");
+  if(!Number.isFinite(n)) return "— "+(c||"TRY");
+  return n.toFixed(2)+" "+(c||"TRY");
 }
 
 function withTimeoutFetch(url, ms=12000){
@@ -147,7 +147,7 @@ function renderMore(){
 async function load(){
   statusEl.textContent="Liste alınıyor...";
 
-  // 4 sayfa = 200 oyun (topsellers)
+  // 4 sayfa = 200 oyun (topsellers) -> TR listesi
   for(let i=0;i<4;i++){
     try{
       const r=await withTimeoutFetch(`${API}/steam/list?start=${i*50}`, 12000);
@@ -173,7 +173,6 @@ async function load(){
         buckets[d].push(j);
         okCount++;
 
-        // pahalı sort yok, sadece rebuild (hafif) ve ilk ekranda bas
         if(okCount === FIRST_SHOW){
           rebuildOrdered();
           shownCount = FIRST_SHOW;
@@ -191,13 +190,11 @@ async function load(){
 
   await Promise.all(Array(CONCURRENCY).fill(0).map(worker));
 
-  // bitiş
   rebuildOrdered();
   if(shownCount === 0){
     shownCount = Math.min(FIRST_SHOW, ordered.length);
     renderMore();
   }else{
-    // loading bitti, kalanları basma butonla
     renderMore();
   }
 
