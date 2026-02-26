@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Steam İndirimli Oyunlar</title>
+<title>Steam Oyunları (USD)</title>
 
 <style>
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
 .wrap{max-width:1100px;margin:0 auto;padding:20px}
 h1{margin:0 0 15px}
-.top{display:flex;gap:12px;align-items:center;margin-bottom:20px}
+.top{display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
 input{
-  flex:1;
+  flex:1; min-width:220px;
   padding:10px;
   border-radius:10px;
   border:1px solid #1d2a4a;
@@ -54,14 +54,14 @@ input{
 
 <body>
 <div class="wrap">
-<h1>Steam İndirimli Oyunlar (USD)</h1>
+  <h1>Steam Oyunları (USD)</h1>
 
-<div class="top">
-<input id="search" placeholder="Oyun ara...">
-<div class="status" id="status">Yükleniyor...</div>
-</div>
+  <div class="top">
+    <input id="search" placeholder="Oyun ara...">
+    <div class="status" id="status">Yükleniyor...</div>
+  </div>
 
-<div class="grid" id="grid"></div>
+  <div class="grid" id="grid"></div>
 </div>
 
 <script>
@@ -74,21 +74,30 @@ let all=[];
 let renderTimer;
 
 function money(v,c){
-  return Number(v).toFixed(2)+" "+c;
+  const n = Number(v);
+  if(!Number.isFinite(n)) return "— "+(c||"USD");
+  return n.toFixed(2)+" "+(c||"USD");
 }
 
 function addCard(g){
   const card=document.createElement("div");
   card.className="card";
-  card.dataset.name=g.name.toLowerCase();
+  card.dataset.name=(g.name||"").toLowerCase();
+
+  const discount = Number(g?.steam?.discount || 0);
+  const showDiscount = discount > 0;
+
+  // ✅ indirim yoksa badge ve çizili fiyat YOK
+  const badge = showDiscount ? `<span class="badge">-${discount}%</span>` : ``;
+  const oldPrice = showDiscount ? `<span class="old">${money(g.steam.initial,g.steam.currency)}</span>` : ``;
 
   card.innerHTML=`
     <div class="title">
       ${g.name}
-      <span class="badge">-${g.steam.discount}%</span>
+      ${badge}
     </div>
     <div>
-      <span class="old">${money(g.steam.initial,g.steam.currency)}</span>
+      ${oldPrice}
       ${money(g.steam.final,g.steam.currency)}
     </div>
     <a class="btn" target="_blank"
@@ -98,6 +107,11 @@ function addCard(g){
   `;
 
   grid.appendChild(card);
+}
+
+function render(){
+  grid.innerHTML="";
+  all.forEach(addCard);
 }
 
 function filter(){
@@ -116,7 +130,6 @@ search.addEventListener("input",()=>{
 });
 
 async function load(){
-
   statusEl.textContent="Liste alınıyor...";
 
   let ids=[];
@@ -124,11 +137,14 @@ async function load(){
   // 4 sayfa = 200 oyun
   for(let i=0;i<4;i++){
     const r=await fetch(`${API}/steam/list?start=${i*50}`);
-    const j=await r.json();
-    if(j.ok) ids.push(...j.appids);
+    const j=await r.json().catch(()=>null);
+    if(j && j.ok && Array.isArray(j.appids)) ids.push(...j.appids);
   }
 
-  statusEl.textContent="İndirimli oyunlar yükleniyor...";
+  // uniq
+  ids = [...new Set(ids)];
+
+  statusEl.textContent="Oyunlar yükleniyor...";
 
   const concurrency=12;
   let index=0;
@@ -142,21 +158,21 @@ async function load(){
       if(!j||!j.ok) continue;
 
       all.push(j);
-      addCard(j);
-
       statusEl.textContent="Toplam "+all.length+" oyun";
     }
   }
 
   await Promise.all(Array(concurrency).fill(0).map(worker));
 
-  // indirim yüzdesine göre sırala (yükleme sonrası)
-  all.sort((a,b)=>b.steam.discount-a.steam.discount);
+  // ✅ İndirimli olanlar üstte görünsün:
+  all.sort((a,b)=>{
+    const da = Number(a?.steam?.discount||0);
+    const db = Number(b?.steam?.discount||0);
+    return db - da;
+  });
 
-  grid.innerHTML="";
-  all.forEach(addCard);
-
-  statusEl.textContent="Toplam "+all.length+" indirimli oyun";
+  render();
+  statusEl.textContent="Toplam "+all.length+" oyun";
 }
 
 load();
