@@ -1,3 +1,4 @@
+<!-- index.html — FIX: API base tam worker domain + hata yakala -->
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -5,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Oyun Fiyat Takip</title>
   <style>
-    :root{--bg:#0b1223;--card:#0f1b33;--card2:#0e172d;--b:#1f2d4a;--t:#e5e7eb;--m:#94a3b8;--g:#22c55e;--r:#ef4444;--y:#f59e0b}
+    :root{--bg:#0b1223;--card:#0f1b33;--card2:#0e172d;--b:#1f2d4a;--t:#e5e7eb;--m:#94a3b8}
     *{box-sizing:border-box}
     body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#0a1020,#0b1223);color:var(--t)}
     .wrap{max-width:1100px;margin:0 auto;padding:26px}
@@ -30,8 +31,6 @@
     .strike{color:var(--m);text-decoration:line-through;font-weight:400;margin-right:8px}
     .tag{font-size:12px;border-radius:999px;padding:3px 8px;border:1px solid var(--b);background:#0b1430}
     .green{border-color:rgba(34,197,94,.6);box-shadow:0 0 0 1px rgba(34,197,94,.15) inset}
-    .red{border-color:rgba(239,68,68,.55)}
-    .warn{border-color:rgba(245,158,11,.55)}
     .small{font-size:12px;color:var(--m)}
     .topline{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   </style>
@@ -57,7 +56,8 @@
   </div>
 
 <script>
-const API = "/api/games?limit=200&cc=";
+const API_BASE = "https://steam-price-api.celikelbatuhan02.workers.dev"; // <- worker domain burası
+const API = (cc) => `${API_BASE}/api/games?limit=200&cc=${encodeURIComponent(cc)}`;
 
 const elGrid = document.getElementById("grid");
 const elMeta = document.getElementById("meta");
@@ -103,13 +103,16 @@ function render(list){
   elGrid.innerHTML = list.map(g => {
     const cheapest = pickCheapest(g.steam, (g.epic && g.epic.status==="ok") ? g.epic : null);
     const steamBox = moneyLine("Steam", g.steam, cheapest.steam);
+
     const epicData = (g.epic && g.epic.status==="ok") ? {
       url: g.epic.url,
       discount_percent: (typeof g.epic.discount_percent==="number") ? g.epic.discount_percent : 0,
       original_formatted: g.epic.original_formatted,
       final_formatted: g.epic.final_formatted,
-      final_amount: g.epic.final_amount
+      final_amount: g.epic.final_amount,
+      initial_formatted: g.epic.original_formatted
     } : null;
+
     const epicBox = moneyLine("Epic", epicData, cheapest.epic);
 
     const img = g.header_image ? `<img class="img" src="${g.header_image}" alt="">` : `<div class="img"></div>`;
@@ -142,11 +145,23 @@ async function load(){
   elMeta.textContent = "Yükleniyor...";
   elGrid.innerHTML = "";
   const cc = elCC.value;
-  const res = await fetch(API + encodeURIComponent(cc), { cache: "no-store" });
-  const data = await res.json();
-  ALL = Array.isArray(data.games) ? data.games : [];
-  elMeta.textContent = `Tamam. ${ALL.length} oyun (Steam+Epic).`;
-  applyFilter();
+
+  try{
+    const res = await fetch(API(cc), { cache: "no-store" });
+    const data = await res.json();
+
+    if (!res.ok || data.ok === false) {
+      throw new Error(data?.message || ("HTTP " + res.status));
+    }
+
+    ALL = Array.isArray(data.games) ? data.games : [];
+    elMeta.textContent = `Tamam. ${ALL.length} oyun (Steam+Epic).`;
+    applyFilter();
+  }catch(err){
+    ALL = [];
+    elGrid.innerHTML = "";
+    elMeta.textContent = "Hata: " + (err?.message || err);
+  }
 }
 
 function applyFilter(){
