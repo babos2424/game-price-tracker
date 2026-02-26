@@ -177,10 +177,57 @@ async function loadSteam(){
 
 async function fetchEpicFor(appid, slug){
   if(epicCache.has(appid)) return epicCache.get(appid);
-  const r=await fetch(`${API}/epic/price?slug=${encodeURIComponent(slug)}`, {cache:"no-store"});
-  const j=await r.json().catch(()=>null);
-  epicCache.set(appid, j);
-  return j;
+
+  try{
+    const r = await fetch(`https://store.epicgames.com/p/${slug}`, {
+      headers:{ "accept":"text/html" }
+    });
+
+    const html = await r.text();
+
+    const m = html.match(/"totalPrice":\s*({[^}]*})/);
+    if(!m){
+      const fail = { ok:false };
+      epicCache.set(appid, fail);
+      return fail;
+    }
+
+    let totalPrice;
+    try{
+      totalPrice = JSON.parse(m[1]);
+    }catch{
+      const fail = { ok:false };
+      epicCache.set(appid, fail);
+      return fail;
+    }
+
+    const final = Number(totalPrice.discountPrice)/100;
+    const initial = Number(totalPrice.originalPrice)/100;
+
+    let discount = 0;
+    if(initial > 0){
+      discount = Math.round((1 - final/initial)*100);
+    }
+
+    const result = {
+      ok:true,
+      epic:{
+        currency: totalPrice.currencyCode || "TRY",
+        final,
+        initial,
+        discount
+      },
+      epic_url: `https://store.epicgames.com/p/${slug}`
+    };
+
+    epicCache.set(appid, result);
+    return result;
+
+  }catch{
+    const fail = { ok:false };
+    epicCache.set(appid, fail);
+    return fail;
+  }
 }
 
 let io;
