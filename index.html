@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Steam Oyunları (TR)</title>
+<title>Oyun Fiyat Takip (TR)</title>
 <style>
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
 .wrap{max-width:1100px;margin:0 auto;padding:20px}
@@ -14,24 +14,30 @@ input{flex:1;min-width:220px;padding:10px;border-radius:10px;border:1px solid #1
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .card{background:#111c3a;border:1px solid #1d2a4a;border-radius:14px;padding:14px}
 .title{font-weight:700;margin-bottom:8px}
-.old{text-decoration:line-through;color:#8aa0c5;margin-right:8px}
-.btn{display:block;margin-top:10px;text-align:center;text-decoration:none;color:#fff;border:1px solid #1d2a4a;padding:8px;border-radius:10px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.old{text-decoration:line-through;color:#8aa0c5;margin-right:6px}
 .badge{background:#22c55e;padding:3px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+.pill{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid #1d2a4a;color:#cbd5e1}
+.green{border-color:#22c55e}
+.btn{display:block;margin-top:10px;text-align:center;text-decoration:none;color:#fff;border:1px solid #1d2a4a;padding:8px;border-radius:10px}
 .moreWrap{margin:14px 0}
 .moreBtn{width:100%;padding:12px;border-radius:12px;background:#0f1a37;color:#fff;border:1px solid #1d2a4a;cursor:pointer;font-weight:700}
 .moreBtn:disabled{opacity:.55;cursor:not-allowed}
+.small{font-size:12px;color:#8aa0c5}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Steam Oyunları (TR)</h1>
+  <h1>Oyun Fiyat Takip (TR)</h1>
   <div class="top">
     <input id="search" placeholder="Oyun ara...">
     <div class="status" id="status">Yükleniyor...</div>
   </div>
+
   <div class="moreWrap">
     <button class="moreBtn" id="moreBtn" disabled>+ Daha Fazla Göster</button>
   </div>
+
   <div class="grid" id="grid"></div>
 </div>
 
@@ -48,6 +54,8 @@ const STEP_SHOW  = isMobile ? 40 : 100;
 
 let all=[];
 let shown=0;
+let epicMap={}; // appid -> slug
+let epicCache=new Map(); // appid -> epic json
 
 function money(v,c){
   const n=Number(v);
@@ -55,21 +63,45 @@ function money(v,c){
   return n.toFixed(2)+" "+(c||"TRY");
 }
 
+function bestStoreClass(steamFinal, epicFinal){
+  const s=Number(steamFinal), e=Number(epicFinal);
+  if(!Number.isFinite(s) && !Number.isFinite(e)) return {steam:false, epic:false};
+  if(!Number.isFinite(e)) return {steam:true, epic:false};
+  if(!Number.isFinite(s)) return {steam:false, epic:true};
+  if(s<=e) return {steam:true, epic:false};
+  return {steam:false, epic:true};
+}
+
 function cardEl(g){
   const div=document.createElement("div");
   div.className="card";
   div.dataset.name=(g.name||"").toLowerCase();
+  div.dataset.appid=String(g.appid);
 
-  const discount=Number(g?.steam?.discount||0);
-  const showDiscount=discount>0;
-  const badge=showDiscount?`<span class="badge">-${discount}%</span>`:"";
-  const oldPrice=showDiscount?`<span class="old">${money(g.steam.initial,g.steam.currency)}</span>`:"";
+  const disc=Number(g?.steam?.discount||0);
+  const badge=disc>0?`<span class="badge">-${disc}%</span>`:"";
+  const old=disc>0?`<span class="old">${money(g.steam.initial,g.steam.currency)}</span>`:"";
+
+  const hasEpic = !!epicMap[String(g.appid)];
+  const epicLine = hasEpic
+    ? `<div class="row small" data-epic="line">Epic: <span class="pill">Yükleniyor...</span></div>`
+    : `<div class="row small">Epic: <span class="pill">Yok</span></div>`;
 
   div.innerHTML=`
     <div class="title">${g.name}${badge}</div>
-    <div>${oldPrice}${money(g.steam.final,g.steam.currency)}</div>
+
+    <div class="row" data-steam="row">
+      <span class="pill">Steam</span>
+      ${old}
+      <span data-steam="price">${money(g.steam.final,g.steam.currency)}</span>
+    </div>
+
+    ${epicLine}
+
     <a class="btn" target="_blank" href="https://store.steampowered.com/app/${g.appid}">Steam'e Git</a>
+    ${hasEpic ? `<a class="btn" target="_blank" href="https://store.epicgames.com/p/${epicMap[String(g.appid)]}">Epic'e Git</a>` : ``}
   `;
+
   return div;
 }
 
@@ -81,6 +113,7 @@ function render(){
   grid.appendChild(frag);
   applySearch();
   moreBtn.disabled = (shown >= all.length);
+  runEpicLazy();
 }
 
 function applySearch(){
@@ -103,25 +136,93 @@ moreBtn.addEventListener("click", ()=>{
   render();
 });
 
+async function loadEpicMap(){
+  try{
+    const r=await fetch("/epic-map.json", {cache:"no-store"});
+    const j=await r.json().catch(()=>null);
+    epicMap = (j && typeof j==="object") ? j : {};
+  }catch(e){
+    epicMap = {};
+  }
+}
+
 async function load(){
-  statusEl.textContent="Snapshot alınıyor...";
+  statusEl.textContent="Steam snapshot...";
   const r=await fetch(`${API}/steam/snapshot?limit=250`);
   const snapHeader = r.headers.get("x-snapshot") || "";
   const j=await r.json().catch(()=>null);
 
   if(!j || !j.ok || !Array.isArray(j.items)){
-    statusEl.textContent="Hata: snapshot yok.";
+    statusEl.textContent="Hata: Steam snapshot yok.";
     return;
   }
 
   all=j.items;
   shown=Math.min(FIRST_SHOW, all.length);
   moreBtn.disabled=false;
-  render();
 
   statusEl.textContent = `Toplam ${all.length} oyun • ${snapHeader.toUpperCase()} • ${j.ts}`;
+  render();
 }
-load();
+
+async function fetchEpicFor(appid){
+  const slug = epicMap[String(appid)];
+  if(!slug) return null;
+  if(epicCache.has(appid)) return epicCache.get(appid);
+
+  const r=await fetch(`${API}/epic/price?slug=${encodeURIComponent(slug)}`, {cache:"no-store"});
+  const j=await r.json().catch(()=>null);
+  if(j && j.ok) epicCache.set(appid, j);
+  return j && j.ok ? j : null;
+}
+
+// visible kartlar için epic çek
+let io;
+function runEpicLazy(){
+  if(!("IntersectionObserver" in window)) return;
+
+  if(!io){
+    io = new IntersectionObserver(async (entries)=>{
+      for(const e of entries){
+        if(!e.isIntersecting) continue;
+        const card = e.target;
+        io.unobserve(card);
+
+        const appid = Number(card.dataset.appid);
+        if(!epicMap[String(appid)]) continue;
+
+        const epic = await fetchEpicFor(appid);
+        const line = card.querySelector('[data-epic="line"]');
+        if(!line) continue;
+
+        if(!epic){
+          line.innerHTML = `Epic: <span class="pill">Bulunamadı</span>`;
+          continue;
+        }
+
+        const sFinal = Number(card.querySelector('[data-steam="price"]')?.textContent?.replace(/[^\d.,]/g,"").replace(".","").replace(",",".")); // sadece görsel
+        const eFinal = Number(epic.epic.final);
+
+        line.innerHTML = `Epic: <span class="pill">Epic</span> <span>${money(epic.epic.final, epic.epic.currency)}</span>`;
+
+        // en ucuz yeşil
+        const best = bestStoreClass(Number(all.find(x=>x.appid===appid)?.steam?.final), epic.epic.final);
+        const steamRow = card.querySelector('[data-steam="row"] .pill');
+        if(steamRow && best.steam) steamRow.classList.add("green");
+        const epicPill = line.querySelector(".pill");
+        if(epicPill && best.epic) epicPill.classList.add("green");
+      }
+    }, {rootMargin:"300px"});
+  }
+
+  const cards = grid.querySelectorAll(".card");
+  for(const c of cards) io.observe(c);
+}
+
+(async function boot(){
+  await loadEpicMap();
+  await load();
+})();
 </script>
 </body>
 </html>
