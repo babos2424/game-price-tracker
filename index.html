@@ -43,6 +43,7 @@ input{flex:1;min-width:220px;padding:10px;border-radius:10px;border:1px solid #1
 
 <script>
 const API="https://steam-price-api.celikelbatuhan02.workers.dev";
+
 const grid=document.getElementById("grid");
 const statusEl=document.getElementById("status");
 const search=document.getElementById("search");
@@ -55,8 +56,9 @@ const STEP_SHOW  = isMobile ? 40 : 100;
 let all=[];
 let shown=0;
 
-let epicEnabled = new Set();     // games.json’daki steam_appid’ler
-let epicCache = new Map();       // appid -> epic result
+// steam_appid -> epic_slug
+let epicSlugByAppid = new Map();
+let epicCache = new Map(); // appid -> epic result
 
 function money(v,c){
   const n=Number(v);
@@ -83,8 +85,8 @@ function cardEl(g){
   const badge=disc>0?`<span class="badge">-${disc}%</span>`:"";
   const old=disc>0?`<span class="old">${money(g.steam.initial,g.steam.currency)}</span>`:"";
 
-  const hasEpic = epicEnabled.has(String(g.appid));
-  const epicLine = hasEpic
+  const epicSlug = epicSlugByAppid.get(String(g.appid)) || null;
+  const epicLine = epicSlug
     ? `<div class="row small" data-epic="line">Epic: <span class="pill">Yükleniyor...</span></div>`
     : `<div class="row small">Epic: <span class="pill">Yok</span></div>`;
 
@@ -94,13 +96,13 @@ function cardEl(g){
     <div class="row" data-steam="row">
       <span class="pill">Steam</span>
       ${old}
-      <span data-steam="price">${money(g.steam.final,g.steam.currency)}</span>
+      <span>${money(g.steam.final,g.steam.currency)}</span>
     </div>
 
     ${epicLine}
 
     <a class="btn" target="_blank" href="https://store.steampowered.com/app/${g.appid}">Steam'e Git</a>
-    ${hasEpic ? `<a class="btn" target="_blank" data-epic="btn" style="display:none">Epic'e Git</a>` : ``}
+    ${epicSlug ? `<a class="btn" target="_blank" data-epic="btn" style="display:none">Epic'e Git</a>` : ``}
   `;
   return div;
 }
@@ -136,25 +138,27 @@ moreBtn.addEventListener("click", ()=>{
   render();
 });
 
-async function loadEpicEnabled(){
+async function loadGamesJson(){
+  // games.json: [{ "steam_appid": 271590, "epic_slug":"grand-theft-auto-v" }, ...]
   try{
     const r=await fetch("/games.json",{cache:"no-store"});
     const j=await r.json().catch(()=>null);
-    epicEnabled=new Set();
+    epicSlugByAppid = new Map();
     if(Array.isArray(j)){
       for(const it of j){
-        const id = it && it.steam_appid;
-        if(id) epicEnabled.add(String(id));
+        const id = it?.steam_appid;
+        const slug = it?.epic_slug;
+        if(id && slug) epicSlugByAppid.set(String(id), String(slug));
       }
     }
   }catch(e){
-    epicEnabled=new Set();
+    epicSlugByAppid = new Map();
   }
 }
 
 async function loadSteam(){
   statusEl.textContent="Steam snapshot...";
-  const r=await fetch(`${API}/steam/snapshot?limit=250`);
+  const r=await fetch(`${API}/steam/snapshot?limit=250`, {cache:"no-store"});
   const snapHeader = r.headers.get("x-snapshot") || "";
   const j=await r.json().catch(()=>null);
 
@@ -171,12 +175,10 @@ async function loadSteam(){
   render();
 }
 
-async function fetchEpicFor(appid, name){
+async function fetchEpicFor(appid, slug){
   if(epicCache.has(appid)) return epicCache.get(appid);
-
-  const r=await fetch(`${API}/epic/auto?name=${encodeURIComponent(name)}`, {cache:"no-store"});
+  const r=await fetch(`${API}/epic/price?slug=${encodeURIComponent(slug)}`, {cache:"no-store"});
   const j=await r.json().catch(()=>null);
-
   epicCache.set(appid, j);
   return j;
 }
@@ -192,16 +194,17 @@ function runEpicLazy(){
         const card = e.target;
         io.unobserve(card);
 
-        const appid = Number(card.dataset.appid);
-        if(!epicEnabled.has(String(appid))) continue;
+        const appid = String(card.dataset.appid);
+        const slug = epicSlugByAppid.get(appid);
+        if(!slug) continue;
 
-        const g = all.find(x=>x.appid===appid);
+        const g = all.find(x=>String(x.appid)===appid);
         if(!g) continue;
 
         const line = card.querySelector('[data-epic="line"]');
         if(!line) continue;
 
-        const epic = await fetchEpicFor(appid, g.name);
+        const epic = await fetchEpicFor(appid, slug);
 
         if(!epic || !epic.ok){
           line.innerHTML = `Epic: <span class="pill">Bulunamadı</span>`;
@@ -235,7 +238,7 @@ function runEpicLazy(){
 }
 
 (async function boot(){
-  await loadEpicEnabled();
+  await loadGamesJson();
   await loadSteam();
 })();
 </script>
