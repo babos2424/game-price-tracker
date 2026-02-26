@@ -1,7 +1,9 @@
 [
-  {
-    "name": "Red Dead Redemption 2",
-    "steam_appid": "1174180",
-    "epic_slug": "red-dead-redemption-2"
-  }
+  { "name": "Red Dead Redemption 2", "steam_appid": "1174180", "epic_slug": "red-dead-redemption-2" },
+  { "name": "Resident Evil 4", "steam_appid": "2050650", "epic_slug": "resident-evil-4" },
+  { "name": "Resident Evil 7 Biohazard", "steam_appid": "418370", "epic_slug": "resident-evil-7-biohazard" },
+  { "name": "Dead by Daylight", "steam_appid": "381210", "epic_slug": "dead-by-daylight" },
+  { "name": "Mount & Blade II: Bannerlord", "steam_appid": "261550", "epic_slug": "mount-and-blade-ii-bannerlord" },
+  { "name": "Rust", "steam_appid": "252490", "epic_slug": "rust" },
+  { "name": "Football Manager 2024", "steam_appid": "2252570", "epic_slug": "football-manager-2024" }
 ]
