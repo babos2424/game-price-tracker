@@ -9,46 +9,32 @@
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
 .wrap{max-width:1100px;margin:0 auto;padding:20px}
 h1{margin:0 0 15px}
-.top{display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
+.top{display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
 input{
   flex:1; min-width:220px;
-  padding:10px;
-  border-radius:10px;
-  border:1px solid #1d2a4a;
-  background:#111c3a;
-  color:white;
+  padding:10px;border-radius:10px;border:1px solid #1d2a4a;
+  background:#111c3a;color:white;
 }
 .status{color:#8aa0c5}
-.grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
-  gap:14px;
-}
-.card{
-  background:#111c3a;
-  border:1px solid #1d2a4a;
-  border-radius:14px;
-  padding:14px;
-}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.card{background:#111c3a;border:1px solid #1d2a4a;border-radius:14px;padding:14px}
 .title{font-weight:700;margin-bottom:8px}
 .old{text-decoration:line-through;color:#8aa0c5;margin-right:8px}
 .btn{
-  display:block;
-  margin-top:10px;
-  text-align:center;
-  text-decoration:none;
-  color:white;
+  display:block;margin-top:10px;text-align:center;text-decoration:none;color:white;
+  border:1px solid #1d2a4a;padding:8px;border-radius:10px;
+}
+.badge{background:#22c55e;padding:3px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+
+.moreWrap{margin:14px 0}
+.moreBtn{
+  width:100%;
+  padding:12px;border-radius:12px;
+  background:#0f1a37;color:#fff;
   border:1px solid #1d2a4a;
-  padding:8px;
-  border-radius:10px;
+  cursor:pointer;font-weight:700;
 }
-.badge{
-  background:#22c55e;
-  padding:3px 6px;
-  border-radius:6px;
-  font-size:12px;
-  margin-left:6px;
-}
+.moreBtn:disabled{opacity:.55;cursor:not-allowed}
 </style>
 </head>
 
@@ -61,6 +47,10 @@ input{
     <div class="status" id="status">Yükleniyor...</div>
   </div>
 
+  <div class="moreWrap">
+    <button class="moreBtn" id="moreBtn" disabled>+ Daha Fazla Göster</button>
+  </div>
+
   <div class="grid" id="grid"></div>
 </div>
 
@@ -69,9 +59,20 @@ const API="https://steam-price-api.celikelbatuhan02.workers.dev";
 const grid=document.getElementById("grid");
 const statusEl=document.getElementById("status");
 const search=document.getElementById("search");
+const moreBtn=document.getElementById("moreBtn");
 
-let all=[];
+let all=[];       // tüm oyun verisi
+let shownCount=0; // ekranda gösterilen adet
+let ids=[];
+
 let renderTimer;
+
+const isMobile = window.matchMedia("(max-width: 640px)").matches;
+
+// ✅ mobil ayarlar
+const CONCURRENCY = isMobile ? 6 : 12;
+const FIRST_SHOW  = isMobile ? 50 : 100;
+const STEP_SHOW   = isMobile ? 50 : 100;
 
 function money(v,c){
   const n = Number(v);
@@ -87,7 +88,6 @@ function addCard(g){
   const discount = Number(g?.steam?.discount || 0);
   const showDiscount = discount > 0;
 
-  // ✅ indirim yoksa badge ve çizili fiyat YOK
   const badge = showDiscount ? `<span class="badge">-${discount}%</span>` : ``;
   const oldPrice = showDiscount ? `<span class="old">${money(g.steam.initial,g.steam.currency)}</span>` : ``;
 
@@ -111,7 +111,9 @@ function addCard(g){
 
 function render(){
   grid.innerHTML="";
-  all.forEach(addCard);
+  const slice = all.slice(0, shownCount);
+  slice.forEach(addCard);
+  filter(); // arama varsa uygula
 }
 
 function filter(){
@@ -132,21 +134,16 @@ search.addEventListener("input",()=>{
 async function load(){
   statusEl.textContent="Liste alınıyor...";
 
-  let ids=[];
-
   // 4 sayfa = 200 oyun
   for(let i=0;i<4;i++){
     const r=await fetch(`${API}/steam/list?start=${i*50}`);
     const j=await r.json().catch(()=>null);
     if(j && j.ok && Array.isArray(j.appids)) ids.push(...j.appids);
   }
-
-  // uniq
   ids = [...new Set(ids)];
 
   statusEl.textContent="Oyunlar yükleniyor...";
 
-  const concurrency=12;
   let index=0;
 
   async function worker(){
@@ -154,26 +151,42 @@ async function load(){
       const id=ids[index++];
       const r=await fetch(`${API}/steam/price?appid=${id}`);
       const j=await r.json().catch(()=>null);
-
       if(!j||!j.ok) continue;
 
       all.push(j);
-      statusEl.textContent="Toplam "+all.length+" oyun";
+
+      // indirimli üstte
+      all.sort((a,b)=>Number(b?.steam?.discount||0)-Number(a?.steam?.discount||0));
+
+      // ilk dolumda ekrana bas (mobilde kasmasın)
+      if(all.length === FIRST_SHOW){
+        shownCount = FIRST_SHOW;
+        render();
+        moreBtn.disabled = false;
+      }
+
+      if(all.length % 10 === 0){
+        statusEl.textContent = `Toplam ${all.length} oyun (Listede ${ids.length})`;
+      }
     }
   }
 
-  await Promise.all(Array(concurrency).fill(0).map(worker));
+  await Promise.all(Array(CONCURRENCY).fill(0).map(worker));
 
-  // ✅ İndirimli olanlar üstte görünsün:
-  all.sort((a,b)=>{
-    const da = Number(a?.steam?.discount||0);
-    const db = Number(b?.steam?.discount||0);
-    return db - da;
-  });
-
-  render();
-  statusEl.textContent="Toplam "+all.length+" oyun";
+  // yükleme bitti
+  if(shownCount === 0){
+    shownCount = Math.min(FIRST_SHOW, all.length);
+    render();
+  }
+  moreBtn.disabled = (shownCount >= all.length);
+  statusEl.textContent = `Toplam ${all.length} oyun`;
 }
+
+moreBtn.addEventListener("click", ()=>{
+  shownCount = Math.min(shownCount + STEP_SHOW, all.length);
+  render();
+  moreBtn.disabled = (shownCount >= all.length);
+});
 
 load();
 </script>
