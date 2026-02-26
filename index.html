@@ -138,9 +138,19 @@ moreBtn.addEventListener("click", ()=>{
 
 async function loadEpicMap(){
   try{
-    const r=await fetch("/epic-map.json", {cache:"no-store"});
+    const r=await fetch("/games.json", {cache:"no-store"});
     const j=await r.json().catch(()=>null);
-    epicMap = (j && typeof j==="object") ? j : {};
+
+    epicMap = {};
+
+    if(Array.isArray(j)){
+      for(const g of j){
+        if(g.steam_appid && g.epic_slug){
+          epicMap[String(g.steam_appid)] = g.epic_slug;
+        }
+      }
+    }
+
   }catch(e){
     epicMap = {};
   }
