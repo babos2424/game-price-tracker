@@ -1,169 +1,363 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Oyun Fiyat Takip</title>
+  <style>
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0f172a;color:#e5e7eb}
+    .wrap{max-width:980px;margin:0 auto;padding:28px}
+    h1{margin:0 0 8px;font-size:34px;color:#fff;text-align:center}
+    .sub{margin:0 0 18px;color:#94a3b8;text-align:center}
+
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:10px 0 18px}
+    select,input,button{
+      background:#111c33;border:1px solid #223a66;color:#e5e7eb;
+      border-radius:10px;padding:10px 12px;font-size:14px;outline:none
+    }
+    button{cursor:pointer}
+    button:hover{filter:brightness(1.08)}
+
+    .msg{color:#94a3b8;text-align:center;margin:8px 0 16px}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+    .card{
+      background:#111c33;border:1px solid #223a66;border-radius:18px;
+      padding:16px;box-shadow:0 8px 28px rgba(0,0,0,.22)
+    }
+    .title{font-size:20px;font-weight:800;margin:0 0 8px}
+    .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .label{color:#93c5fd;font-size:13px;margin-top:6px}
+    .muted{opacity:.75}
+
+    .priceRow{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+    .old{opacity:.65}
+    .new{font-weight:900;font-size:18px}
+
+    .badge{
+      margin-left:auto;background:#22c55e;color:#052e14;font-weight:900;
+      padding:6px 10px;border-radius:999px;font-size:12px
+    }
+
+    .btns{display:flex;gap:10px;margin-top:12px}
+    .btn{
+      flex:1;text-align:center;text-decoration:none;
+      background:#0b1226;border:1px solid #223a66;color:#e5e7eb;
+      padding:10px 12px;border-radius:12px;font-weight:800
+    }
+    .btn.primary{background:#22c55e;border-color:#22c55e;color:#052e14}
+    .btn:hover{filter:brightness(1.08)}
+
+    .small{font-size:12px;color:#94a3b8;margin-top:10px}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>Oyun Fiyat Takip</h1>
+    <p class="sub">Steam + Epic fiyatlarını karşılaştır.</p>
+
+    <div class="toolbar">
+      <select id="country">
+        <option value="TR" selected>Türkiye</option>
+        <option value="US">USA</option>
+        <option value="DE">Germany</option>
+      </select>
+
+      <select id="limit">
+        <option value="50">50 oyun</option>
+        <option value="100">100 oyun</option>
+        <option value="200" selected>200 oyun</option>
+      </select>
+
+      <input id="search" placeholder="Oyun ara..." />
+      <button id="loadBtn">Yükle</button>
+    </div>
+
+    <div id="msg" class="msg">Hazır.</div>
+    <div id="grid" class="grid"></div>
+  </div>
+
 <script>
 /** =========================
- *  1) SABİT STEAM KURU
- *  =========================
- *  Bunu bir kere belirle, sonra kur değişse bile fiyatların değişmez.
- *  İstersen buna "Steam sabit kuru" diyelim.
- */
-const STEAM_FIXED_USD_TRY = 35.00; // <- burayı istediğin sabit kur yap
+ *  AYARLAR
+ *  ========================= */
+const WORKER_BASE = "https://steam-price-api.celikelbatuhan02.workers.dev";
+const STEAM_FIXED_USD_TRY = 35.00; // ✅ Sabit kur: değişmesin istiyorsun ya, tek yer burası.
 
-/** TL format */
-function fmtTRY(amount) {
-  return new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(amount);
+/** Basit oyun listesi (örnek). İstersen sonra “en çok oynananlar”ı otomatik çekeriz. */
+const ALL_GAMES = [
+  { name: "Counter-Strike 2", steamAppId: 730, epicSlug: null },
+  { name: "PUBG: BATTLEGROUNDS", steamAppId: 578080, epicSlug: null },
+  { name: "Euro Truck Simulator 2", steamAppId: 227300, epicSlug: null },
+  { name: "Black Desert", steamAppId: 582660, epicSlug: null },
+  { name: "ARC Raiders", steamAppId: 1808500, epicSlug: null },
+  { name: "Resident Evil Requiem", steamAppId: 3764200, epicSlug: null },
+  { name: "Grand Theft Auto V", steamAppId: 271590, epicSlug: "grand-theft-auto-v" }
+];
+
+/** =========================
+ *  FORMAT / PARSE
+ *  ========================= */
+function fmtTRY(amount){
+  return new Intl.NumberFormat("tr-TR",{style:"currency",currency:"TRY"}).format(amount);
 }
-
-/** "$52.49 USD" gibi stringlerden sayı çıkarır */
-function parseUsdText(steamText) {
-  if (!steamText) return null;
-  const s = String(steamText).replace(",", ".");
+function parseNumberFromText(t){
+  if(t==null) return null;
+  const s = String(t).replace(",", ".");
   const m = s.match(/(\d+(\.\d+)?)/);
   return m ? Number(m[1]) : null;
 }
-
-/** USD -> TL (sabit kurla) */
-function usdToTryFixed(usd) {
-  if (usd == null || Number.isNaN(usd)) return null;
+function usdToTryFixed(usd){
+  if(usd==null || Number.isNaN(usd)) return null;
   return usd * STEAM_FIXED_USD_TRY;
 }
-
-/** Epic minor unit (104900) -> TL */
-function epicMinorToTry(minor, decimals = 2) {
-  if (minor == null) return null;
+function epicMinorToTry(minor, decimals=2){
+  if(minor==null) return null;
   return Number(minor) / Math.pow(10, decimals);
 }
 
-/** Steam fiyat render:
- * - steamObj şu formatlardan birini destekler:
- *   A) { finalText: "$52.49 USD", originalText: "$59.99 USD" }  (indirim varsa)
- *   B) { finalText: "$52.49 USD" } (indirim yoksa)
- *
- * Not: Eğer elinde sadece tek steamText varsa, indirim/orijinal ayrımı mümkün değil.
- * Bu kod iki durumu da kaldırıyor.
- */
-function renderSteamPriceHTML(steamObjOrText) {
-  let finalUsd = null, originalUsd = null;
-
-  if (typeof steamObjOrText === "string") {
-    finalUsd = parseUsdText(steamObjOrText);
-  } else if (steamObjOrText && typeof steamObjOrText === "object") {
-    finalUsd = parseUsdText(steamObjOrText.finalText);
-    originalUsd = parseUsdText(steamObjOrText.originalText);
+/** =========================
+ *  EPIC FETCH
+ *  ========================= */
+async function fetchEpic(slug, country="TR", locale="tr"){
+  if(!slug) return { ok:false, error:"no_slug" };
+  try{
+    const r = await fetch(`${WORKER_BASE}/epic?slug=${encodeURIComponent(slug)}&country=${encodeURIComponent(country)}&locale=${encodeURIComponent(locale)}`);
+    const j = await r.json();
+    return j;
+  }catch(e){
+    return { ok:false, error:"epic_fetch_failed", message:String(e) };
   }
-
-  const finalTry = usdToTryFixed(finalUsd);
-  const originalTry = usdToTryFixed(originalUsd);
-
-  if (!finalTry) return `<span class="muted">Yok</span>`;
-
-  // indirim varsa: eski üstü çizili + yeni
-  if (originalTry && originalTry > finalTry) {
-    return `
-      <div class="priceRow">
-        <del class="old">${fmtTRY(originalTry)}</del>
-        <span class="new">${fmtTRY(finalTry)}</span>
-      </div>
-    `;
-  }
-
-  // indirim yoksa: tek fiyat
-  return `<span class="new">${fmtTRY(finalTry)}</span>`;
 }
-
-/** Epic render: Worker zaten fmtDiscount/fmtOriginal veriyor ama biz TL olarak yazıyoruz */
-function renderEpicPriceHTML(epicData) {
-  if (!epicData?.ok) return `<span class="muted">Bulunamadı</span>`;
-
+function renderEpicPriceHTML(epicData){
+  if(!epicData?.ok) return `<span class="muted">Bulunamadı</span>`;
   const tp = epicData.epic?.totalPrice;
-  if (!tp) return `<span class="muted">Bulunamadı</span>`;
+  if(!tp) return `<span class="muted">Bulunamadı</span>`;
 
-  // Epic'te original/discount minor units var
   const dec = tp.decimals ?? 2;
   const original = epicMinorToTry(tp.originalPrice, dec);
   const discount = epicMinorToTry(tp.discountPrice, dec);
 
-  if (discount == null) return `<span class="muted">Bulunamadı</span>`;
+  if(discount==null) return `<span class="muted">Bulunamadı</span>`;
 
-  if (original != null && original > discount) {
-    return `
-      <div class="priceRow">
-        <del class="old">${fmtTRY(original)}</del>
-        <span class="new">${fmtTRY(discount)}</span>
-      </div>
-    `;
+  if(original!=null && original > discount){
+    return `<div class="priceRow"><del class="old">${fmtTRY(original)}</del><span class="new">${fmtTRY(discount)}</span></div>`;
   }
-
   return `<span class="new">${fmtTRY(discount)}</span>`;
 }
 
-/** CSS (sayfanda style varsa oraya da koyabilirsin) */
-(function injectPriceStyles(){
-  const css = `
-    .priceRow{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
-    .old{opacity:.65}
-    .new{font-weight:800}
-    .muted{opacity:.7}
-  `;
-  const s = document.createElement("style");
-  s.textContent = css;
-  document.head.appendChild(s);
-})();
+/** =========================
+ *  STEAM FETCH (ÇÖKMEZ)
+ *  =========================
+ *  Senin worker farklı format döndürebilir.
+ *  Bu fonksiyon olabildiğince çok formatı destekler.
+ */
+async function fetchSteamAny(appId, cc="TR"){
+  try{
+    // Bazı kurulumlarda endpoint root olabilir (/?appid=...)
+    // Bazılarında /steam?appid=... olabilir.
+    // İkisini de deniyoruz.
+    const urls = [
+      `${WORKER_BASE}/?appid=${encodeURIComponent(appId)}&cc=${encodeURIComponent(cc)}`,
+      `${WORKER_BASE}/steam?appid=${encodeURIComponent(appId)}&cc=${encodeURIComponent(cc)}`
+    ];
+
+    for(const u of urls){
+      const r = await fetch(u);
+      if(!r.ok) continue;
+      const ct = r.headers.get("content-type") || "";
+      if(!ct.includes("application/json")) continue;
+      const j = await r.json();
+      // en azından bir alan varsa kabul edelim
+      return j;
+    }
+    return { ok:false, error:"steam_endpoint_not_found" };
+  }catch(e){
+    return { ok:false, error:"steam_fetch_failed", message:String(e) };
+  }
+}
+
+/**
+ * Steam JSON’undan:
+ * - finalUsd (indirimli)
+ * - originalUsd (indirimsiz)
+ * çıkarır.
+ *
+ * Çıkamazsa: sadece final bulunur.
+ */
+function normalizeSteam(steamJson){
+  // 1) Eğer bizim istediğimiz gibi dönüyorsa:
+  if(steamJson?.final_text){
+    return {
+      finalUsd: parseNumberFromText(steamJson.final_text),
+      originalUsd: parseNumberFromText(steamJson.original_text)
+    };
+  }
+
+  // 2) Eğer price_overview dönüyorsa (Steam appdetails gibi):
+  // price_overview: { final: 4999, initial: 9999, currency:"USD" } (minor units)
+  const po = steamJson?.price_overview || steamJson?.data?.price_overview;
+  if(po && (po.final!=null || po.initial!=null)){
+    // Steam minor units genelde 100 ile bölünür
+    const finalUsd = po.final!=null ? Number(po.final)/100 : null;
+    const originalUsd = po.initial!=null ? Number(po.initial)/100 : null;
+    return { finalUsd, originalUsd };
+  }
+
+  // 3) Eğer tek fiyat text olarak varsa:
+  if(steamJson?.steam_price_text){
+    return { finalUsd: parseNumberFromText(steamJson.steam_price_text), originalUsd: null };
+  }
+
+  // 4) Eğer tek fiyat numeric varsa:
+  if(steamJson?.steam_price!=null){
+    // steam_price numeric ise zaten USD olabilir
+    return { finalUsd: Number(steamJson.steam_price), originalUsd: null };
+  }
+
+  return { finalUsd:null, originalUsd:null };
+}
+
+function renderSteamPriceHTML(steamJson){
+  const n = normalizeSteam(steamJson);
+  const finalTry = usdToTryFixed(n.finalUsd);
+  const originalTry = usdToTryFixed(n.originalUsd);
+
+  if(!finalTry) return `<span class="muted">Yok</span>`;
+
+  if(originalTry && originalTry > finalTry){
+    return `<div class="priceRow"><del class="old">${fmtTRY(originalTry)}</del><span class="new">${fmtTRY(finalTry)}</span></div>`;
+  }
+  return `<span class="new">${fmtTRY(finalTry)}</span>`;
+}
 
 /** =========================
- *  2) EPIC FİYAT ÇEK
+ *  UI
  *  ========================= */
-async function fetchEpic(slug) {
-  const res = await fetch(`https://steam-price-api.celikelbatuhan02.workers.dev/epic?slug=${encodeURIComponent(slug)}&country=TR&locale=tr`);
-  return await res.json();
+function setMsg(t){ document.getElementById("msg").innerText = t; }
+
+function steamLink(appId){ return `https://store.steampowered.com/app/${appId}/?l=turkish`; }
+function epicLink(slug){ return `https://store.epicgames.com/tr/p/${slug}`; }
+
+function makeCard(game){
+  const card = document.createElement("div");
+  card.className = "card";
+
+  card.innerHTML = `
+    <div class="row">
+      <div>
+        <div class="title">${escapeHtml(game.name)}</div>
+      </div>
+      <div class="badge" style="display:none" data-badge>EN UCUZ</div>
+    </div>
+
+    <div class="label">Steam</div>
+    <div data-steam class="muted">Yükleniyor...</div>
+
+    <div class="label">Epic</div>
+    <div data-epic class="muted">Yükleniyor...</div>
+
+    <div class="btns">
+      <a class="btn primary" href="${steamLink(game.steamAppId)}" target="_blank" rel="noreferrer">Steam'de Aç</a>
+      <a class="btn" href="${game.epicSlug ? epicLink(game.epicSlug) : "#"}" target="_blank" rel="noreferrer" style="${game.epicSlug ? "" : "opacity:.5;pointer-events:none"}">Epic'de Aç</a>
+    </div>
+
+    <div class="small">Steam AppID: ${game.steamAppId}${game.epicSlug ? ` • Epic Slug: ${game.epicSlug}` : ""}</div>
+  `;
+
+  return card;
 }
 
-/** =========================
- *  3) STEAM FİYAT ÇEK
- *  =========================
- *  Burayı SENİN mevcut Steam fetch fonksiyonuna bağlayacağız.
- *  Şu an sende Steam tarafı ekranda "$52.49 USD" gibi görünüyor.
- *
- *  Eğer Steam’den sadece 1 fiyat metni alıyorsan:
- *    return { finalText: steamText }
- *
- *  Eğer Steam’den hem eski hem yeni geliyorsa:
- *    return { finalText: "...", originalText: "..." }
- */
-async function fetchSteamForRender(appId, country="TR") {
-  // !!! Burayı SENİN mevcut Steam endpoint'ine göre düzenle.
-  // ÖRNEK: { finalText: "$52.49 USD", originalText:"$59.99 USD" } döndürecek şekilde.
-  const r = await fetch(`https://steam-price-api.celikelbatuhan02.workers.dev/steam?appid=${appId}&cc=${country}`);
-  const d = await r.json();
-
-  // AŞAĞIDAKİ MAPPING'i senin JSON'una göre ayarla:
-  // Eğer sadece tek fiyat geliyorsa:
-  if (d?.steam_price_text) {
-    return { finalText: d.steam_price_text };
-  }
-
-  // Eğer indirimli + orijinal ayrı geliyorsa:
-  if (d?.final_text && d?.original_text) {
-    return { finalText: d.final_text, originalText: d.original_text };
-  }
-
-  // Hiçbiri yoksa boş dön
-  return null;
+function escapeHtml(s){
+  return String(s)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
 
-/** =========================
- *  4) Kart içine basma örneği
- *  =========================
- *  Bu fonksiyonu kart oluştururken çağır:
- *    applyPricesToCard(game, steamEl, epicEl)
- */
-async function applyPricesToCard(game, steamPriceEl, epicPriceEl) {
+/** fiyatları çekip karta bas (hata olsa bile kart kalır) */
+async function fillCardPrices(card, game, cc){
+  const steamEl = card.querySelector("[data-steam]");
+  const epicEl = card.querySelector("[data-epic]");
+
   // Steam
-  steamPriceEl.innerHTML = `<span class="muted">Yükleniyor...</span>`;
-  const steamObj = await fetchSteamForRender(game.steamAppId, "TR");
-  steamPriceEl.innerHTML = steamObj ? renderSteamPriceHTML(steamObj) : `<span class="muted">Yok</span>`;
+  const steamJson = await fetchSteamAny(game.steamAppId, cc);
+  steamEl.innerHTML = renderSteamPriceHTML(steamJson);
 
   // Epic
-  epicPriceEl.innerHTML = `<span class="muted">Yükleniyor...</span>`;
-  const epicData = await fetchEpic(game.epicSlug);
-  epicPriceEl.innerHTML = renderEpicPriceHTML(epicData);
+  const epicJson = await fetchEpic(game.epicSlug, cc, "tr");
+  epicEl.innerHTML = renderEpicPriceHTML(epicJson);
+
+  // “EN UCUZ” rozet (mümkünse)
+  // Steam/Epic TL değerlerini hesapla (bulamazsak pas geç)
+  const sN = normalizeSteam(steamJson);
+  const steamTl = usdToTryFixed(sN.finalUsd);
+
+  let epicTl = null;
+  if(epicJson?.ok){
+    const tp = epicJson.epic?.totalPrice;
+    if(tp){
+      epicTl = epicMinorToTry(tp.discountPrice ?? tp.originalPrice, tp.decimals ?? 2);
+    }
+  }
+
+  const badge = card.querySelector("[data-badge]");
+  // İkisi de varsa karşılaştır
+  if(steamTl!=null && epicTl!=null){
+    badge.style.display = (epicTl < steamTl) ? "inline-block" : "none";
+  } else {
+    badge.style.display = "none";
+  }
 }
+
+async function loadGames(){
+  const cc = document.getElementById("country").value;
+  const lim = Number(document.getElementById("limit").value);
+  const q = document.getElementById("search").value.trim().toLowerCase();
+
+  let list = ALL_GAMES.slice();
+  if(q){
+    list = list.filter(g => g.name.toLowerCase().includes(q));
+  }
+  list = list.slice(0, lim);
+
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+
+  setMsg("Steam + Epic fiyatları yükleniyor...");
+
+  // kartları bas
+  const cards = list.map(g => {
+    const c = makeCard(g);
+    grid.appendChild(c);
+    return { card:c, game:g };
+  });
+
+  // sırayla yükle (PC kötü demiştin, aynı anda 200 fetch kasabilir)
+  for(let i=0;i<cards.length;i++){
+    const {card, game} = cards[i];
+    try{
+      await fillCardPrices(card, game, cc);
+    }catch(e){
+      // asla beyaz kalmasın
+      const steamEl = card.querySelector("[data-steam]");
+      const epicEl = card.querySelector("[data-epic]");
+      steamEl.innerHTML = `<span class="muted">Hata</span>`;
+      epicEl.innerHTML = `<span class="muted">Hata</span>`;
+    }
+  }
+
+  setMsg("Steam + Epic fiyatları yüklendi.");
+}
+
+document.getElementById("loadBtn").addEventListener("click", loadGames);
+document.getElementById("search").addEventListener("keydown", (e)=>{ if(e.key==="Enter") loadGames(); });
+
+// sayfa açılınca otomatik yükle
+loadGames();
 </script>
+</body>
+</html>
