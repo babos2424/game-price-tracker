@@ -6,76 +6,227 @@
   <title>Oyun Fiyat Takip</title>
   <style>
     body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0f172a;color:#e5e7eb}
-    .wrap{max-width:1000px;margin:0 auto;padding:28px}
+    .wrap{max-width:1100px;margin:0 auto;padding:28px}
     h1{margin:0 0 8px;font-size:34px;color:#fff}
     .sub{margin:0 0 18px;color:#94a3b8}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-    .card{background:#111c33;border:1px solid #223254;border-radius:12px;padding:14px}
-    .name{margin:0 0 8px;font-size:16px;color:#fff}
+    .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0 18px}
+    input,select{background:#0b1223;border:1px solid #223254;color:#e5e7eb;border-radius:10px;padding:10px 12px;outline:none}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+    .card{background:#111c33;border:1px solid #223254;border-radius:12px;padding:14px;position:relative}
+    .name{margin:0 0 10px;font-size:16px;color:#fff}
     .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-    .price{margin:0;font-size:14px}
+    .store{display:flex;flex-direction:column;gap:6px}
+    .line{font-size:14px;margin:0}
+    .old{color:#94a3b8;text-decoration:line-through}
     .badge{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid #2b3a57;color:#cbd5e1}
     a{color:#93c5fd;text-decoration:none}
     .muted{color:#94a3b8}
     .err{color:#fca5a5}
+    .win{border-color:#16a34a; box-shadow:0 0 0 1px #16a34a inset;}
+    .tops{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Oyun Fiyat Takip</h1>
-    <p class="sub">Steam (Most Played) — fiyatlar USD ($)</p>
+    <p class="sub">Steam + Epic — 200 oyun (free yok). En ucuz mağaza yeşil.</p>
 
-    <div id="status" class="muted">Yükleniyor...</div>
+    <div class="bar">
+      <select id="region">
+        <option value="TR">TR</option>
+        <option value="DE">EU (DE)</option>
+        <option value="US">US</option>
+        <option value="GB">UK</option>
+      </select>
+
+      <input id="search" placeholder="Oyun ara (isim yaz)..." style="flex:1;min-width:240px" />
+      <span id="status" class="muted">Yükleniyor...</span>
+    </div>
+
     <div id="games" class="grid"></div>
   </div>
 
   <script>
-    const API_URL = "https://steam-price-api.celikelbatuhan02.workers.dev/";
+    const WORKER_BASE = "https://steam-price-api.celikelbatuhan02.workers.dev"; // senin worker domain
+    const state = {
+      all: [],
+      view: [],
+      region: "TR",
+      locale: "tr"
+    };
 
-    function fmtUSD(n) {
-      if (typeof n !== "number") return "-";
-      return "$" + n.toFixed(2);
+    function money(v, cur){
+      if (typeof v !== "number") return "-";
+      return `${v.toFixed(2)} ${cur || ""}`.trim();
     }
 
-    async function loadGames() {
-      const status = document.getElementById("status");
+    function render(list){
       const container = document.getElementById("games");
+      container.innerHTML = "";
 
-      try {
-        const res = await fetch(API_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error("API hata: " + res.status);
+      for (const g of list) {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.dataset.name = (g.name || "").toLowerCase();
 
-        const data = await res.json();
-        const games = data.games || [];
+        const s = g.steam;
+        const e = g.epic;
 
-        status.textContent = `Yüklendi: ${games.length} oyun`;
+        const steamHas = s && typeof s.final === "number";
+        const epicHas = e && typeof e.final === "number";
 
-        container.innerHTML = "";
-        for (const g of games) {
-          const card = document.createElement("div");
-          card.className = "card";
-
-          card.innerHTML = `
-            <p class="name">${g.name}</p>
-            <div class="row">
-              <p class="price">Steam: <b>${fmtUSD(g.steam_price)}</b></p>
-              <span class="badge">-${g.steam_discount || 0}%</span>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <span class="muted">USD</span>
-              <a href="${g.steam_url}" target="_blank" rel="noopener">Steam'e git</a>
-            </div>
-          `;
-          container.appendChild(card);
+        // En ucuz belirle (ikisi de varsa)
+        let winner = null;
+        if (steamHas && epicHas) {
+          winner = (s.final <= e.final) ? "steam" : "epic";
+        } else if (steamHas && !epicHas) {
+          winner = "steam";
+        } else if (!steamHas && epicHas) {
+          winner = "epic";
         }
 
-      } catch (e) {
-        status.innerHTML = `<span class="err">Hata:</span> ${e.message}`;
-        container.innerHTML = "";
+        const steamDiscount = steamHas && s.discount > 0;
+        const epicDiscount = epicHas && e.discount > 0;
+
+        // winner yeşil: sadece mağaza satırını yeşil yapmak yerine kartı yeşil çerçeve yapıyoruz
+        // (istersen sadece satırı boyarız)
+        if (steamHas && epicHas) card.classList.add("win"); // kartta yeşil çerçeve (seçilebilir)
+        // Not: altta satır bazlı rozetle göstereceğiz
+
+        card.innerHTML = `
+          <p class="name">${g.name}</p>
+
+          <div class="row">
+            <div class="store">
+              <p class="line">
+                Steam:
+                ${steamDiscount ? `<span class="old">${money(s.initial, s.currency)}</span> ` : ``}
+                <b>${steamHas ? money(s.final, s.currency) : "-"}</b>
+              </p>
+              <div class="tops">
+                <span class="badge">${steamDiscount ? `-${s.discount}%` : "Steam"}</span>
+                <a href="${s.url}" target="_blank" rel="noopener">Steam'e git</a>
+                ${winner === "steam" && epicHas ? `<span class="badge" style="border-color:#16a34a;color:#bbf7d0">EN UCUZ</span>` : ``}
+              </div>
+            </div>
+          </div>
+
+          <hr style="border:0;border-top:1px solid #223254;margin:12px 0">
+
+          <div class="row">
+            <div class="store">
+              <p class="line">
+                Epic:
+                ${epicDiscount ? `<span class="old">${money(e.initial, e.currency)}</span> ` : ``}
+                <b>${epicHas ? money(e.final, e.currency) : "<span class='muted'>yükleniyor...</span>"}</b>
+              </p>
+              <div class="tops">
+                <span class="badge">${epicDiscount ? `-${e.discount}%` : "Epic"}</span>
+                ${e && e.url ? `<a href="${e.url}" target="_blank" rel="noopener">Epic'e git</a>` : `<span class="muted">Epic link yok</span>`}
+                ${winner === "epic" ? `<span class="badge" style="border-color:#16a34a;color:#bbf7d0">EN UCUZ</span>` : ``}
+              </div>
+            </div>
+          </div>
+        `;
+
+        container.appendChild(card);
       }
     }
 
-    loadGames();
+    function applySearch(){
+      const q = document.getElementById("search").value.trim().toLowerCase();
+      state.view = !q ? state.all : state.all.filter(g => (g.name||"").toLowerCase().includes(q));
+      render(state.view);
+    }
+
+    async function loadSteam(){
+      const status = document.getElementById("status");
+      status.textContent = "Steam listesi çekiliyor...";
+
+      const cc = state.region;
+      const l = state.locale;
+
+      const res = await fetch(`${WORKER_BASE}/steam?cc=${cc}&l=${l}`, { cache:"no-store" });
+      if (!res.ok) throw new Error("Steam API hata: " + res.status);
+      const data = await res.json();
+
+      // 200 hedef, free’ler atıldığı için sayısı bazen düşebilir ama liste “en az” çoğunlukla 150+ olur.
+      // İstersen bunu 200'e zorlamak için sonra ek “next source” ekleriz.
+      const games = (data.games || []).slice(0, 200).map(g => ({ ...g, epic: null }));
+
+      state.all = games;
+      state.view = games;
+
+      status.textContent = `Steam yüklendi: ${games.length} oyun. Epic fiyatları getiriliyor...`;
+      render(state.view);
+
+      // Epic’i batch batch çek
+      await loadEpicBatches();
+      status.textContent = `Tamam: ${state.all.length} oyun (Steam+Epic hazır).`;
+    }
+
+    async function loadEpicBatches(){
+      // 20'lik batch, aralarda küçük bekleme (rate limit riskini azaltır)
+      const BATCH = 20;
+      const cc = state.region;
+      const locale = state.locale;
+
+      for (let i = 0; i < state.all.length; i += BATCH) {
+        const slice = state.all.slice(i, i + BATCH);
+        const names = slice.map(g => g.name);
+
+        try {
+          const res = await fetch(`${WORKER_BASE}/epic-batch?cc=${cc}&locale=${locale}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ names })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const map = data.results || {};
+
+            // state güncelle
+            for (const g of slice) {
+              const e = map[g.name];
+              if (e) g.epic = e;
+              else g.epic = { final: null, initial: null, currency: "", discount: 0, url: null };
+            }
+          }
+        } catch (e) {
+          // hata olsa bile site bozulmasın
+        }
+
+        // ekranda güncelle (arama aktifse de çalışsın)
+        applySearch();
+
+        // küçük bekleme
+        await new Promise(r => setTimeout(r, 250));
+      }
+    }
+
+    function setLocaleFromRegion(){
+      state.locale = (state.region === "TR") ? "tr" : "en";
+    }
+
+    document.getElementById("search").addEventListener("input", applySearch);
+    document.getElementById("region").addEventListener("change", async (e) => {
+      state.region = e.target.value;
+      setLocaleFromRegion();
+      try { await loadSteam(); }
+      catch (err) {
+        document.getElementById("status").innerHTML = `<span class="err">Hata:</span> ${err.message}`;
+      }
+    });
+
+    // init
+    (async () => {
+      setLocaleFromRegion();
+      try { await loadSteam(); }
+      catch (err) {
+        document.getElementById("status").innerHTML = `<span class="err">Hata:</span> ${err.message}`;
+      }
+    })();
   </script>
 </body>
 </html>
