@@ -3,14 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Oyun Fiyat Takip (TR)</title>
+<title>Oyun Fiyat Takip (TR) - Test</title>
 <style>
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
 .wrap{max-width:1100px;margin:0 auto;padding:20px}
 h1{margin:0 0 15px}
-.top{display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
-input{flex:1;min-width:220px;padding:10px;border-radius:10px;border:1px solid #1d2a4a;background:#111c3a;color:#fff;outline:none}
-.status{color:#8aa0c5;white-space:pre-wrap}
+.status{color:#8aa0c5;margin-bottom:14px;white-space:pre-wrap}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .card{background:#111c3a;border:1px solid #1d2a4a;border-radius:14px;padding:14px}
 .title{font-weight:700;margin-bottom:8px}
@@ -20,45 +18,32 @@ input{flex:1;min-width:220px;padding:10px;border-radius:10px;border:1px solid #1
 .pill{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid #1d2a4a;color:#cbd5e1}
 .green{border-color:#22c55e}
 .btn{display:block;margin-top:10px;text-align:center;text-decoration:none;color:#fff;border:1px solid #1d2a4a;padding:8px;border-radius:10px}
-.moreWrap{margin:14px 0}
-.moreBtn{width:100%;padding:12px;border-radius:12px;background:#0f1a37;color:#fff;border:1px solid #1d2a4a;cursor:pointer;font-weight:700}
-.moreBtn:disabled{opacity:.55;cursor:not-allowed}
 .small{font-size:12px;color:#8aa0c5}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Oyun Fiyat Takip (TR)</h1>
-  <div class="top">
-    <input id="search" placeholder="Oyun ara...">
-    <div class="status" id="status">Yükleniyor...</div>
-  </div>
-
-  <div class="moreWrap">
-    <button class="moreBtn" id="moreBtn" disabled>+ Daha Fazla Göster</button>
-  </div>
-
+  <h1>Oyun Fiyat Takip (TR) – Test</h1>
+  <div class="status" id="status">Yükleniyor...</div>
   <div class="grid" id="grid"></div>
 </div>
 
 <script>
-const API="https://steam-price-api.celikelbatuhan02.workers.dev";
+const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
+const statusEl = document.getElementById("status");
+const grid = document.getElementById("grid");
 
-const grid=document.getElementById("grid");
-const statusEl=document.getElementById("status");
-const search=document.getElementById("search");
-const moreBtn=document.getElementById("moreBtn");
+// ✅ SADECE 2 OYUN
+const GAMES = [
+  { title:"Red Dead Redemption 2", steam_appid: 1174180, epic_query:"Red Dead Redemption 2" },
+  { title:"Grand Theft Auto V Enhanced", steam_appid: 3240220, epic_query:"Grand Theft Auto V" }
+];
 
-const isMobile = window.matchMedia("(max-width: 640px)").matches;
-const FIRST_SHOW = isMobile ? 60 : 150;
-const STEP_SHOW  = isMobile ? 40 : 100;
-
-let all=[];
-let shown=0;
-
-// steam_appid -> epic_slug
-let epicSlugByAppid = new Map();
-let epicCache = new Map(); // appid -> epic result
+// Basit CORS proxy (epic HTML/JSON çekmek için)
+function proxy(url){
+  // r.jina.ai çoğu sitede CORS ile text döndürür
+  return "https://r.jina.ai/http://" + url.replace(/^https?:\/\//,"");
+}
 
 function money(v,c){
   const n=Number(v);
@@ -75,219 +60,142 @@ function bestStoreClass(steamFinal, epicFinal){
   return {steam:false, epic:true};
 }
 
-function cardEl(g){
+function cardSkeleton(g){
   const div=document.createElement("div");
   div.className="card";
-  div.dataset.name=(g.name||"").toLowerCase();
-  div.dataset.appid=String(g.appid);
-
-  const disc=Number(g?.steam?.discount||0);
-  const badge=disc>0?`<span class="badge">-${disc}%</span>`:"";
-  const old=disc>0?`<span class="old">${money(g.steam.initial,g.steam.currency)}</span>`:"";
-
-  const epicSlug = epicSlugByAppid.get(String(g.appid)) || null;
-  const epicLine = epicSlug
-    ? `<div class="row small" data-epic="line">Epic: <span class="pill">Yükleniyor...</span></div>`
-    : `<div class="row small">Epic: <span class="pill">Yok</span></div>`;
-
   div.innerHTML=`
-    <div class="title">${g.name}${badge}</div>
+    <div class="title">${g.title}</div>
 
     <div class="row" data-steam="row">
       <span class="pill">Steam</span>
-      ${old}
-      <span>${money(g.steam.final,g.steam.currency)}</span>
+      <span class="small">Yükleniyor...</span>
     </div>
 
-    ${epicLine}
+    <div class="row small" data-epic="row">
+      Epic: <span class="pill">Yükleniyor...</span>
+    </div>
 
-    <a class="btn" target="_blank" href="https://store.steampowered.com/app/${g.appid}">Steam'e Git</a>
-    ${epicSlug ? `<a class="btn" target="_blank" data-epic="btn" style="display:none">Epic'e Git</a>` : ``}
+    <a class="btn" target="_blank" data-steam-btn>Steam'e Git</a>
+    <a class="btn" target="_blank" data-epic-btn style="display:none">Epic'e Git</a>
   `;
   return div;
 }
 
-function render(){
-  grid.innerHTML="";
-  const frag=document.createDocumentFragment();
-  const slice=all.slice(0, shown);
-  for(const g of slice) frag.appendChild(cardEl(g));
-  grid.appendChild(frag);
-  applySearch();
-  moreBtn.disabled = (shown >= all.length);
-  runEpicLazy();
+async function getSteam(appid){
+  const r = await fetch(`${API}/steam/price?appid=${appid}`, {cache:"no-store"});
+  return await r.json().catch(()=>null);
 }
 
-function applySearch(){
-  const q=search.value.toLowerCase().trim();
-  const cards=grid.children;
-  for(let i=0;i<cards.length;i++){
-    const name=cards[i].dataset.name;
-    cards[i].style.display=(!q||name.includes(q))?"block":"none";
-  }
-}
+// ✅ Epic otomatik: önce arama sayfasından ilk /p/ slug bul → ürün sayfasından totalPrice çek
+async function getEpicAuto(queryName){
+  // 1) Epic browse search HTML
+  const searchUrl = `https://store.epicgames.com/en-US/browse?q=${encodeURIComponent(queryName)}&sortBy=relevancy&sortDir=DESC`;
+  const sTxt = await fetch(proxy(searchUrl), {cache:"no-store"}).then(r=>r.text()).catch(()=>null);
+  if(!sTxt) return {ok:false, error:"search_fetch_failed"};
 
-let tmr;
-search.addEventListener("input", ()=>{
-  clearTimeout(tmr);
-  tmr=setTimeout(applySearch,120);
-});
+  // Arama HTML içinde /p/slug yakala (ilk bulunan)
+  const mSlug = sTxt.match(/\/p\/([a-z0-9-]+)/i);
+  if(!mSlug) return {ok:false, error:"no_slug"};
 
-moreBtn.addEventListener("click", ()=>{
-  shown=Math.min(shown+STEP_SHOW, all.length);
-  render();
-});
+  const slug = mSlug[1];
+  const productUrl = `https://store.epicgames.com/p/${slug}`;
 
-async function loadGamesJson(){
-  // games.json: [{ "steam_appid": 271590, "epic_slug":"grand-theft-auto-v" }, ...]
-  try{
-    const r=await fetch("/games.json",{cache:"no-store"});
-    const j=await r.json().catch(()=>null);
-    epicSlugByAppid = new Map();
-    if(Array.isArray(j)){
-      for(const it of j){
-        const id = it?.steam_appid;
-        const slug = it?.epic_slug;
-        if(id && slug) epicSlugByAppid.set(String(id), String(slug));
-      }
-    }
-  }catch(e){
-    epicSlugByAppid = new Map();
-  }
-}
+  // 2) Ürün sayfası HTML
+  const pTxt = await fetch(proxy(productUrl), {cache:"no-store"}).then(r=>r.text()).catch(()=>null);
+  if(!pTxt) return {ok:false, error:"product_fetch_failed", slug};
 
-async function loadSteam(){
-  statusEl.textContent="Steam snapshot...";
-  const r=await fetch(`${API}/steam/snapshot?limit=250`, {cache:"no-store"});
-  const snapHeader = r.headers.get("x-snapshot") || "";
-  const j=await r.json().catch(()=>null);
+  // 3) totalPrice JSON çek
+  const mPrice = pTxt.match(/"totalPrice":\s*({[^}]*})/);
+  if(!mPrice) return {ok:false, error:"price_not_found", slug};
 
-  if(!j || !j.ok || !Array.isArray(j.items)){
-    statusEl.textContent="Hata: Steam snapshot yok.";
-    return;
+  let tp;
+  try{ tp = JSON.parse(mPrice[1]); }catch{ return {ok:false, error:"price_parse_failed", slug}; }
+
+  const final = Number(tp.discountPrice)/100;
+  const initial = Number(tp.originalPrice)/100;
+
+  let discount = 0;
+  if(initial > 0 && Number.isFinite(final) && Number.isFinite(initial)){
+    discount = Math.round((1 - final/initial) * 100);
+    if(discount < 0) discount = 0;
+    if(discount > 99) discount = 99;
   }
 
-  all=j.items;
-  shown=Math.min(FIRST_SHOW, all.length);
-  moreBtn.disabled=false;
-
-  statusEl.textContent = `Toplam ${all.length} oyun • ${snapHeader.toUpperCase()} • ${j.ts}`;
-  render();
+  return {
+    ok:true,
+    epic:{
+      currency: tp.currencyCode || "TRY",
+      final, initial, discount
+    },
+    epic_url: productUrl,
+    slug
+  };
 }
 
-async function fetchEpicFor(appid, slug){
-  if(epicCache.has(appid)) return epicCache.get(appid);
+async function boot(){
+  statusEl.textContent = "2 oyun test ediliyor: RDR2 + GTA V Enhanced";
 
-  try{
-    const r = await fetch(`https://store.epicgames.com/p/${slug}`, {
-      headers:{ "accept":"text/html" }
-    });
+  grid.innerHTML = "";
+  const cards = new Map();
 
-    const html = await r.text();
+  for(const g of GAMES){
+    const c = cardSkeleton(g);
+    grid.appendChild(c);
+    cards.set(g.steam_appid, c);
 
-    const m = html.match(/"totalPrice":\s*({[^}]*})/);
-    if(!m){
-      const fail = { ok:false };
-      epicCache.set(appid, fail);
-      return fail;
-    }
+    // Steam link
+    c.querySelector("[data-steam-btn]").href = `https://store.steampowered.com/app/${g.steam_appid}`;
+  }
 
-    let totalPrice;
-    try{
-      totalPrice = JSON.parse(m[1]);
-    }catch{
-      const fail = { ok:false };
-      epicCache.set(appid, fail);
-      return fail;
+  // Paralel çek
+  await Promise.all(GAMES.map(async (g)=>{
+    const c = cards.get(g.steam_appid);
+
+    const [steam, epic] = await Promise.all([
+      getSteam(g.steam_appid),
+      getEpicAuto(g.epic_query)
+    ]);
+
+    // Steam render
+    const steamRow = c.querySelector('[data-steam="row"]');
+    if(steam?.ok){
+      const disc = Number(steam?.steam?.discount||0);
+      const badge = disc>0?`<span class="badge">-${disc}%</span>`:"";
+      const old = disc>0?`<span class="old">${money(steam.steam.initial, steam.steam.currency)}</span>`:"";
+      steamRow.innerHTML = `<span class="pill">Steam</span> ${old} <span>${money(steam.steam.final, steam.steam.currency)}</span> ${badge}`;
+    }else{
+      steamRow.innerHTML = `<span class="pill">Steam</span> <span class="small">Bulunamadı</span>`;
     }
 
-    const final = Number(totalPrice.discountPrice)/100;
-    const initial = Number(totalPrice.originalPrice)/100;
-
-    let discount = 0;
-    if(initial > 0){
-      discount = Math.round((1 - final/initial)*100);
+    // Epic render
+    const epicRow = c.querySelector('[data-epic="row"]');
+    const epicBtn = c.querySelector('[data-epic-btn]');
+    if(epic?.ok){
+      const disc = Number(epic?.epic?.discount||0);
+      const badge = disc>0?`<span class="badge">-${disc}%</span>`:"";
+      const old = disc>0?`<span class="old">${money(epic.epic.initial, epic.epic.currency)}</span>`:"";
+      epicRow.innerHTML = `Epic: <span class="pill">Epic</span> ${old} <span>${money(epic.epic.final, epic.epic.currency)}</span> ${badge}`;
+      epicBtn.href = epic.epic_url;
+      epicBtn.style.display = "block";
+    }else{
+      epicRow.innerHTML = `Epic: <span class="pill">Bulunamadı</span>`;
     }
 
-    const result = {
-      ok:true,
-      epic:{
-        currency: totalPrice.currencyCode || "TRY",
-        final,
-        initial,
-        discount
-      },
-      epic_url: `https://store.epicgames.com/p/${slug}`
-    };
+    // En ucuzu yeşil
+    const best = bestStoreClass(
+      Number(steam?.steam?.final),
+      Number(epic?.epic?.final)
+    );
+    const steamPill = c.querySelector('[data-steam="row"] .pill');
+    const epicPill = c.querySelector('[data-epic="row"] .pill');
+    if(steamPill && best.steam) steamPill.classList.add("green");
+    if(epicPill && best.epic) epicPill.classList.add("green");
+  }));
 
-    epicCache.set(appid, result);
-    return result;
-
-  }catch{
-    const fail = { ok:false };
-    epicCache.set(appid, fail);
-    return fail;
-  }
+  statusEl.textContent = "Bitti ✅ (RDR2 + GTA V Enhanced)";
 }
 
-let io;
-function runEpicLazy(){
-  if(!("IntersectionObserver" in window)) return;
-
-  if(!io){
-    io = new IntersectionObserver(async (entries)=>{
-      for(const e of entries){
-        if(!e.isIntersecting) continue;
-        const card = e.target;
-        io.unobserve(card);
-
-        const appid = String(card.dataset.appid);
-        const slug = epicSlugByAppid.get(appid);
-        if(!slug) continue;
-
-        const g = all.find(x=>String(x.appid)===appid);
-        if(!g) continue;
-
-        const line = card.querySelector('[data-epic="line"]');
-        if(!line) continue;
-
-        const epic = await fetchEpicFor(appid, slug);
-
-        if(!epic || !epic.ok){
-          line.innerHTML = `Epic: <span class="pill">Bulunamadı</span>`;
-          return;
-        }
-
-        const ed = Number(epic?.epic?.discount||0);
-        const eold = ed>0 ? `<span class="old">${money(epic.epic.initial, epic.epic.currency)}</span>` : "";
-
-        line.innerHTML =
-          `Epic: <span class="pill">Epic</span> ${eold} <span>${money(epic.epic.final, epic.epic.currency)}</span>` +
-          (ed>0 ? ` <span class="badge">-${ed}%</span>` : ``);
-
-        const btn = card.querySelector('[data-epic="btn"]');
-        if(btn && epic.epic_url){
-          btn.href = epic.epic_url;
-          btn.style.display = "block";
-        }
-
-        const best = bestStoreClass(Number(g?.steam?.final), Number(epic?.epic?.final));
-        const steamPill = card.querySelector('[data-steam="row"] .pill');
-        const epicPill = line.querySelector(".pill");
-        if(steamPill && best.steam) steamPill.classList.add("green");
-        if(epicPill && best.epic) epicPill.classList.add("green");
-      }
-    }, {rootMargin:"300px"});
-  }
-
-  const cards = grid.querySelectorAll(".card");
-  for(const c of cards) io.observe(c);
-}
-
-(async function boot(){
-  await loadGamesJson();
-  await loadSteam();
-})();
+boot();
 </script>
 </body>
 </html>
