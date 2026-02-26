@@ -54,8 +54,9 @@ const STEP_SHOW  = isMobile ? 40 : 100;
 
 let all=[];
 let shown=0;
-let epicMap={}; // appid -> slug
-let epicCache=new Map(); // appid -> epic json
+
+let epicEnabled = new Set();     // games.json’daki appid’ler
+let epicCache = new Map();       // appid -> epic result
 
 function money(v,c){
   const n=Number(v);
@@ -82,7 +83,7 @@ function cardEl(g){
   const badge=disc>0?`<span class="badge">-${disc}%</span>`:"";
   const old=disc>0?`<span class="old">${money(g.steam.initial,g.steam.currency)}</span>`:"";
 
-  const hasEpic = !!epicMap[String(g.appid)];
+  const hasEpic = epicEnabled.has(String(g.appid));
   const epicLine = hasEpic
     ? `<div class="row small" data-epic="line">Epic: <span class="pill">Yükleniyor...</span></div>`
     : `<div class="row small">Epic: <span class="pill">Yok</span></div>`;
@@ -99,9 +100,8 @@ function cardEl(g){
     ${epicLine}
 
     <a class="btn" target="_blank" href="https://store.steampowered.com/app/${g.appid}">Steam'e Git</a>
-    ${hasEpic ? `<a class="btn" target="_blank" href="https://store.epicgames.com/p/${epicMap[String(g.appid)]}">Epic'e Git</a>` : ``}
+    ${hasEpic ? `<a class="btn" target="_blank" data-epic="btn" style="display:none">Epic'e Git</a>` : ``}
   `;
-
   return div;
 }
 
@@ -136,27 +136,23 @@ moreBtn.addEventListener("click", ()=>{
   render();
 });
 
-async function loadEpicMap(){
+async function loadEpicEnabled(){
   try{
-    const r=await fetch("/games.json", {cache:"no-store"});
+    const r=await fetch("/games.json",{cache:"no-store"});
     const j=await r.json().catch(()=>null);
-
-    epicMap = {};
-
+    epicEnabled=new Set();
     if(Array.isArray(j)){
-      for(const g of j){
-        if(g.steam_appid && g.epic_slug){
-          epicMap[String(g.steam_appid)] = g.epic_slug;
-        }
+      for(const it of j){
+        const id = it && it.steam_appid;
+        if(id) epicEnabled.add(String(id));
       }
     }
-
   }catch(e){
-    epicMap = {};
+    epicEnabled=new Set();
   }
 }
 
-async function load(){
+async function loadSteam(){
   statusEl.textContent="Steam snapshot...";
   const r=await fetch(`${API}/steam/snapshot?limit=250`);
   const snapHeader = r.headers.get("x-snapshot") || "";
@@ -175,18 +171,16 @@ async function load(){
   render();
 }
 
-async function fetchEpicFor(appid){
-  const slug = epicMap[String(appid)];
-  if(!slug) return null;
+async function fetchEpicFor(appid, name){
   if(epicCache.has(appid)) return epicCache.get(appid);
 
-  const r=await fetch(`${API}/epic/price?slug=${encodeURIComponent(slug)}`, {cache:"no-store"});
+  const r=await fetch(`${API}/epic/auto?name=${encodeURIComponent(name)}`, {cache:"no-store"});
   const j=await r.json().catch(()=>null);
-  if(j && j.ok) epicCache.set(appid, j);
-  return j && j.ok ? j : null;
+
+  epicCache.set(appid, j);
+  return j;
 }
 
-// visible kartlar için epic çek
 let io;
 function runEpicLazy(){
   if(!("IntersectionObserver" in window)) return;
@@ -199,27 +193,34 @@ function runEpicLazy(){
         io.unobserve(card);
 
         const appid = Number(card.dataset.appid);
-        if(!epicMap[String(appid)]) continue;
+        if(!epicEnabled.has(String(appid))) continue;
 
-        const epic = await fetchEpicFor(appid);
+        const g = all.find(x=>x.appid===appid);
+        if(!g) continue;
+
         const line = card.querySelector('[data-epic="line"]');
         if(!line) continue;
 
-        if(!epic){
-          line.innerHTML = `Epic: <span class="pill">Bulunamadı</span>`;
-          continue;
-        }
+        const epic = await fetchEpicFor(appid, g.name);
 
-        const sFinal = Number(card.querySelector('[data-steam="price"]')?.textContent?.replace(/[^\d.,]/g,"").replace(".","").replace(",",".")); // sadece görsel
-        const eFinal = Number(epic.epic.final);
+        if(!epic || !epic.ok){
+          line.innerHTML = `Epic: <span class="pill">Bulunamadı</span>`;
+          return;
+        }
 
         line.innerHTML = `Epic: <span class="pill">Epic</span> <span>${money(epic.epic.final, epic.epic.currency)}</span>`;
 
+        const btn = card.querySelector('[data-epic="btn"]');
+        if(btn && epic.epic_url){
+          btn.href = epic.epic_url;
+          btn.style.display = "block";
+        }
+
         // en ucuz yeşil
-        const best = bestStoreClass(Number(all.find(x=>x.appid===appid)?.steam?.final), epic.epic.final);
-        const steamRow = card.querySelector('[data-steam="row"] .pill');
-        if(steamRow && best.steam) steamRow.classList.add("green");
+        const best = bestStoreClass(Number(g?.steam?.final), Number(epic?.epic?.final));
+        const steamPill = card.querySelector('[data-steam="row"] .pill');
         const epicPill = line.querySelector(".pill");
+        if(steamPill && best.steam) steamPill.classList.add("green");
         if(epicPill && best.epic) epicPill.classList.add("green");
       }
     }, {rootMargin:"300px"});
@@ -230,8 +231,8 @@ function runEpicLazy(){
 }
 
 (async function boot(){
-  await loadEpicMap();
-  await load();
+  await loadEpicEnabled();
+  await loadSteam();
 })();
 </script>
 </body>
