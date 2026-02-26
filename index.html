@@ -22,14 +22,13 @@ input{flex:1;min-width:220px;padding:10px;border-radius:10px;border:1px solid #1
 .moreBtn:disabled{opacity:.55;cursor:not-allowed}
 </style>
 </head>
-
 <body>
 <div class="wrap">
   <h1>Steam Oyunları (TR)</h1>
 
   <div class="top">
     <input id="search" placeholder="Oyun ara...">
-    <div class="status" id="status">Hazırlanıyor...</div>
+    <div class="status" id="status">Yükleniyor...</div>
   </div>
 
   <div class="moreWrap">
@@ -47,63 +46,44 @@ const search=document.getElementById("search");
 const moreBtn=document.getElementById("moreBtn");
 
 const isMobile = window.matchMedia("(max-width: 640px)").matches;
+const FIRST_SHOW = isMobile ? 60 : 150;
+const STEP_SHOW  = isMobile ? 40 : 100;
 
-// ✅ hedef: ekranda GÖSTERİLECEK oyun sayısı
-const STEP_DISPLAY = isMobile ? 20 : 80;   // her tıkta + kaç oyun görünsün
-const FIRST_DISPLAY = isMobile ? 30 : 120; // açılışta kaç oyun görünsün
-
-// ✅ daha hızlı pc
-const CONCURRENCY = isMobile ? 4 : 14;
-
-// ✅ fiyatı olmayanları telafi etmek için kaç appid deneyeceğiz (gösterilen başına)
-const TRY_MULTIPLIER = isMobile ? 5 : 4; // 20 oyun için 100 appid denemeye kadar çıkabilir
-const FETCH_TIMEOUT = isMobile ? 18000 : 15000;
-
-let ids=[];
-let cursor=0;
-
-// ekranda görünen oyunlar
-let games=[];
-
-// cache: tekrar çekmesin
-const seen = new Set();
+let all=[];         // snapshot'tan gelen full liste
+let shownCount=0;
 
 function money(v,c){
-  const n = Number(v);
+  const n=Number(v);
   if(!Number.isFinite(n)) return "— "+(c||"TRY");
   return n.toFixed(2)+" "+(c||"TRY");
 }
 
-function withTimeout(url, ms=FETCH_TIMEOUT){
-  const ctrl=new AbortController();
-  const t=setTimeout(()=>ctrl.abort(), ms);
-  return fetch(url,{signal:ctrl.signal}).finally(()=>clearTimeout(t));
-}
-
-function cardEl(g){
-  const div=document.createElement("div");
-  div.className="card";
-  div.dataset.name=(g.name||"").toLowerCase();
+function addCard(g){
+  const card=document.createElement("div");
+  card.className="card";
+  card.dataset.name=(g.name||"").toLowerCase();
 
   const discount=Number(g?.steam?.discount||0);
   const showDiscount=discount>0;
   const badge=showDiscount?`<span class="badge">-${discount}%</span>`:"";
   const oldPrice=showDiscount?`<span class="old">${money(g.steam.initial,g.steam.currency)}</span>`:"";
 
-  div.innerHTML=`
+  card.innerHTML=`
     <div class="title">${g.name}${badge}</div>
     <div>${oldPrice}${money(g.steam.final,g.steam.currency)}</div>
     <a class="btn" target="_blank" href="https://store.steampowered.com/app/${g.appid}">Steam'e Git</a>
   `;
-  return div;
+  return card;
 }
 
 function render(){
-  const frag=document.createDocumentFragment();
-  for(const g of games) frag.appendChild(cardEl(g));
   grid.innerHTML="";
+  const frag=document.createDocumentFragment();
+  const slice=all.slice(0, shownCount);
+  for(const g of slice) frag.appendChild(addCard(g));
   grid.appendChild(frag);
   applySearch();
+  moreBtn.disabled = (shownCount >= all.length);
 }
 
 function applySearch(){
@@ -121,119 +101,37 @@ search.addEventListener("input", ()=>{
   tmr=setTimeout(applySearch,120);
 });
 
-// indirim büyükten küçüğe araya ekle (liste küçük kalır, hızlı)
-function insertByDiscount(g){
-  const d=Number(g?.steam?.discount||0);
-  let i=0;
-  while(i<games.length && Number(games[i]?.steam?.discount||0) >= d) i++;
-  games.splice(i,0,g);
-}
+moreBtn.addEventListener("click", ()=>{
+  shownCount = Math.min(shownCount + STEP_SHOW, all.length);
+  render();
+});
 
-async function loadIds(){
-  statusEl.textContent="Liste alınıyor...";
-  const tmp=[];
-  for(let i=0;i<4;i++){
-    try{
-      const r=await withTimeout(`${API}/steam/list?start=${i*50}`, FETCH_TIMEOUT);
-      const j=await r.json().catch(()=>null);
-      if(j && j.ok && Array.isArray(j.appids)) tmp.push(...j.appids);
-    }catch(e){}
-  }
-  ids=[...new Set(tmp)];
-  statusEl.textContent=`Listede ${ids.length} oyun adayı bulundu.`;
-}
+async function load(){
+  try{
+    statusEl.textContent="Snapshot alınıyor...";
+    const r=await fetch(`${API}/steam/snapshot?limit=250`); // worker cache’li
+    const j=await r.json().catch(()=>null);
 
-// cursor’dan başlayıp maksimum maxTry appid dene, kaç tane “ok” geldi döndür
-async function fetchChunk(maxTry){
-  const slice = ids.slice(cursor, cursor + maxTry);
-  cursor += slice.length;
-
-  let idx=0;
-  let ok=0, fail=0;
-
-  async function worker(){
-    while(idx < slice.length){
-      const appid = slice[idx++];
-      if(seen.has(appid)) continue;
-      seen.add(appid);
-
-      try{
-        const r=await withTimeout(`${API}/steam/price?appid=${appid}`, FETCH_TIMEOUT);
-        const j=await r.json().catch(()=>null);
-        if(j && j.ok){
-          insertByDiscount(j);
-          ok++;
-        }else{
-          fail++;
-        }
-      }catch(e){
-        fail++;
-      }
+    if(!j || !j.ok || !Array.isArray(j.items)){
+      statusEl.textContent="Hata: snapshot alınamadı.";
+      return;
     }
-  }
 
-  await Promise.all(Array(CONCURRENCY).fill(0).map(worker));
-  return {ok, fail, tried: slice.length};
-}
-
-// ✅ hedefe ulaşana kadar yeni appid denemeye devam et
-async function loadUntil(targetDisplay){
-  moreBtn.disabled = true;
-
-  let totalTried=0, totalOk=0, totalFail=0;
-
-  while(games.length < targetDisplay && cursor < ids.length){
-    const need = targetDisplay - games.length;
-    const maxTry = Math.min(ids.length - cursor, need * TRY_MULTIPLIER);
-
-    statusEl.textContent =
-      `Yükleniyor... hedef ${targetDisplay} | mevcut ${games.length}\n` +
-      `Denenecek: +${maxTry} aday`;
-
-    const r = await fetchChunk(maxTry);
-    totalTried += r.tried;
-    totalOk += r.ok;
-    totalFail += r.fail;
-
-    // mobil donmasın
+    all = j.items;
+    shownCount = Math.min(FIRST_SHOW, all.length);
     render();
 
-    // Eğer bir turda hiç ok gelmediyse ve cursor ilerlediyse, bir tur daha dene (liste boş kalmasın)
-    if(r.ok === 0 && r.tried > 0 && cursor < ids.length) continue;
-    if(r.tried === 0) break;
-  }
-
-  render();
-
-  if(cursor >= ids.length){
-    moreBtn.disabled = true;
-    statusEl.textContent =
-      `Bitti. Toplam ${games.length} oyun.\n` +
-      `Denendi: ${totalTried} | OK: ${totalOk} | Fail: ${totalFail}`;
-  }else{
     moreBtn.disabled = false;
-    statusEl.textContent =
-      `Toplam ${games.length} oyun (Listede ${ids.length})\n` +
-      `Son tur: Denendi ${totalTried} | OK ${totalOk} | Fail ${totalFail}`;
+
+    const cached = j.cached ? "CACHE" : "FRESH";
+    statusEl.textContent = `Toplam ${all.length} oyun • ${cached} • ${j.ts || ""}`.trim();
+
+  }catch(e){
+    statusEl.textContent="Hata: bağlantı/timeout";
   }
 }
 
-window.addEventListener("error",(e)=>{
-  statusEl.textContent = "HATA: " + (e?.message||"bilinmiyor");
-});
-window.addEventListener("unhandledrejection",(e)=>{
-  statusEl.textContent = "HATA: " + (e?.reason?.message||e?.reason||"bilinmiyor");
-});
-
-(async function boot(){
-  await loadIds();
-  moreBtn.disabled=false;
-  await loadUntil(FIRST_DISPLAY);
-})();
-
-moreBtn.addEventListener("click", ()=>{
-  loadUntil(games.length + STEP_DISPLAY);
-});
+load();
 </script>
 </body>
 </html>
