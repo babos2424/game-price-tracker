@@ -5,35 +5,48 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Oyun Fiyat Takip</title>
   <style>
-    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0b1222;color:#eaf0ff}
-    .wrap{max-width:1000px;margin:0 auto;padding:22px}
-    h1{margin:0 0 6px}
-    .sub{margin:0 0 16px;color:#8aa0c5}
-    .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0 16px}
-    select,input{background:#0c1631;border:1px solid #1d2a4a;color:#eaf0ff;padding:10px 12px;border-radius:10px;outline:none}
-    input{flex:1;min-width:240px}
-    .status{color:#8aa0c5}
+    :root{
+      --bg:#0b1222;
+      --card:#0f1a33;
+      --muted:#8aa0c5;
+      --border:#1d2a4a;
+      --text:#eaf0ff;
+    }
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:radial-gradient(900px 500px at 20% 0%, #132247 0%, var(--bg) 60%);color:var(--text);}
+    .wrap{max-width:1000px;margin:0 auto;padding:26px;}
+    h1{margin:0 0 6px;font-size:34px}
+    .sub{margin:0 0 16px;color:var(--muted)}
+    .topbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:14px 0 18px}
+    select,input{background:#0c1631;border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;outline:none}
+    input{flex:1;min-width:260px}
+    .status{margin-left:auto;color:var(--muted)}
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}
-    .card{background:#0f1a33;border:1px solid #1d2a4a;border-radius:14px;padding:14px}
-    .title{font-weight:700;margin:0 0 8px}
-    .row{display:flex;justify-content:space-between;gap:10px;align-items:center}
-    .old{text-decoration:line-through;color:#8aa0c5;margin-right:8px}
-    .btn{display:block;margin-top:10px;text-align:center;text-decoration:none;color:#eaf0ff;border:1px solid #1d2a4a;padding:10px;border-radius:12px;background:#0c1631}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));border:1px solid var(--border);border-radius:14px;padding:14px}
+    .title{font-size:16px;font-weight:700;margin:0 0 10px;line-height:1.25}
+    .row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0}
+    .badge{font-size:12px;color:var(--muted)}
+    .price{font-weight:800}
+    .old{color:var(--muted);text-decoration:line-through;margin-right:8px;font-weight:700}
+    .store{display:flex;gap:8px;align-items:center}
+    .pill{font-size:12px;border:1px solid var(--border);padding:4px 8px;border-radius:999px;color:var(--muted)}
+    .links{display:flex;gap:10px;margin-top:10px}
+    .btn{flex:1;text-align:center;text-decoration:none;color:var(--text);border:1px solid var(--border);padding:10px 10px;border-radius:12px;background:#0c1631}
     .btn:hover{border-color:#2c3c68}
-    .err{display:none;margin:12px 0;padding:10px 12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);border-radius:12px}
+    .err{color:#ffd3d3;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);padding:10px 12px;border-radius:12px;margin:12px 0;display:none}
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Oyun Fiyat Takip</h1>
-    <p class="sub">Steam (şimdilik). Free yok. DLC/Demo/Soundtrack otomatik atılır.</p>
+    <p class="sub">Steam en çok satanlardan oyun listesi (free/DLC yok).</p>
 
-    <div class="bar">
+    <div class="topbar">
       <select id="lang">
         <option value="tr">TR</option>
         <option value="en">EN</option>
       </select>
-      <input id="search" placeholder="Oyun ara..." />
+
+      <input id="search" placeholder="Oyun ara (isim yaz)..." />
       <div class="status" id="status">Yükleniyor…</div>
     </div>
 
@@ -43,113 +56,160 @@
 
 <script>
   const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
+
   const elGrid = document.getElementById("grid");
   const elStatus = document.getElementById("status");
   const elErr = document.getElementById("err");
   const elSearch = document.getElementById("search");
   const elLang = document.getElementById("lang");
 
-  let all = [];
+  let allGames = [];
 
-  function cc(){ return elLang.value === "en" ? "us" : "tr"; }
-  function money(n, c){ return (Number(n).toFixed(2) + " " + (c||"")).trim(); }
+  function currentCC(){
+    return elLang.value === "en" ? "us" : "tr";
+  }
 
-  function render(list){
+  function money(v, currency){
+    if (v == null) return "—";
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "—";
+    return `${n.toFixed(2)} ${currency || ""}`.trim();
+  }
+
+  function render(){
+    const q = (elSearch.value || "").toLowerCase().trim();
+    const list = q ? allGames.filter(g => (g.name || "").toLowerCase().includes(q)) : allGames;
+
+    elStatus.textContent = `Tamam. ${list.length} oyun (Steam).`;
+
     elGrid.innerHTML = "";
-    const q = (elSearch.value||"").toLowerCase().trim();
-    const filtered = q ? list.filter(x => (x.name||"").toLowerCase().includes(q)) : list;
+    const frag = document.createDocumentFragment();
 
-    elStatus.textContent = `Tamam. ${filtered.length} oyun (Steam).`;
-    for(const g of filtered){
+    for(const g of list){
       const card = document.createElement("div");
       card.className = "card";
 
-      const t = document.createElement("div");
-      t.className = "title";
-      t.textContent = g.name;
-      card.appendChild(t);
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = g.name;
+      card.appendChild(title);
 
-      const row = document.createElement("div");
-      row.className = "row";
+      const r1 = document.createElement("div");
+      r1.className = "row";
 
-      const left = document.createElement("div");
-      left.textContent = "Steam";
+      const left1 = document.createElement("div");
+      left1.className = "store";
+      left1.innerHTML = `<span class="pill">Steam</span><span class="badge">(${g.steam.currency || ""})</span>`;
 
-      const right = document.createElement("div");
-      if(g.discount>0 && g.initial>g.final){
-        right.innerHTML = `<span class="old">${money(g.initial,g.currency)}</span>${money(g.final,g.currency)}`;
-      }else{
-        right.textContent = money(g.final,g.currency);
-      }
-      row.appendChild(left);
-      row.appendChild(right);
-      card.appendChild(row);
+      const right1 = document.createElement("div");
+      right1.className = "price";
 
-      const a = document.createElement("a");
-      a.className = "btn";
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.href = `https://store.steampowered.com/app/${g.appid}/?cc=${encodeURIComponent(cc())}`;
-      a.textContent = "Steam'e Git";
-      card.appendChild(a);
+      const disc = (g.steam.discount || 0) > 0 && (g.steam.initial || 0) > (g.steam.final || 0);
+      right1.innerHTML = disc
+        ? `<span class="old">${money(g.steam.initial, g.steam.currency)}</span>${money(g.steam.final, g.steam.currency)}`
+        : `${money(g.steam.final, g.steam.currency)}`;
 
-      elGrid.appendChild(card);
+      r1.appendChild(left1);
+      r1.appendChild(right1);
+      card.appendChild(r1);
+
+      const links = document.createElement("div");
+      links.className = "links";
+
+      const a1 = document.createElement("a");
+      a1.className = "btn";
+      a1.target = "_blank";
+      a1.rel = "noopener";
+      a1.href = `https://store.steampowered.com/app/${g.appid}/?cc=${encodeURIComponent(currentCC())}`;
+      a1.textContent = "Steam'e Git";
+
+      links.appendChild(a1);
+      card.appendChild(links);
+
+      frag.appendChild(card);
     }
+
+    elGrid.appendChild(frag);
+  }
+
+  async function fetchList(){
+    const cc = currentCC();
+    const r = await fetch(`${API}/steam/list?cc=${encodeURIComponent(cc)}&limit=900`, { cache: "no-store" });
+    const j = await r.json();
+    if(!r.ok || !j.ok) throw new Error(j?.message || j?.error || "Liste API hata");
+    return j.appids || [];
+  }
+
+  async function fetchPrice(appid){
+    const cc = currentCC();
+    const r = await fetch(`${API}/steam/price?appid=${appid}&cc=${encodeURIComponent(cc)}`, { cache: "no-store" });
+    const j = await r.json().catch(()=>null);
+    if(!j || !j.ok) return null;
+
+    // sadece oyun
+    if(j.type && j.type !== "game") return null;
+
+    // free/fiyatsız
+    if(!j.steam || !j.steam.final || j.steam.final <= 0) return null;
+
+    return { appid: j.appid || Number(appid), name: j.name || ("App " + appid), steam: j.steam };
   }
 
   async function load(){
-    elErr.style.display="none";
-    elStatus.textContent="Liste alınıyor…";
-    all = [];
+    elErr.style.display = "none";
+    elStatus.textContent = "Liste alınıyor…";
+    allGames = [];
+    render();
 
-    const listRes = await fetch(`${API}/steam/list?cc=${encodeURIComponent(cc())}`, {cache:"no-store"});
-    const listJson = await listRes.json();
-    if(!listRes.ok || !listJson.ok) throw new Error(listJson?.message || "Liste hatası");
+    const ids = await fetchList();
 
-    const ids = (listJson.appids || []).slice(0, 500); // çok al, filtre sonra düşer
     elStatus.textContent = `Fiyatlar yükleniyor… (0/${ids.length})`;
 
-    // Sırayla yavaş yavaş çekelim (asla patlamasın diye)
+    // yavaş ama sağlam: aynı anda 6 istek
+    const concurrency = 6;
+    let idx = 0;
     let done = 0;
-    for(const id of ids){
-      const r = await fetch(`${API}/steam/price?appid=${id}&cc=${encodeURIComponent(cc())}`, {cache:"no-store"});
-      const j = await r.json().catch(()=>null);
-      done++;
-      elStatus.textContent = `Fiyatlar yükleniyor… (${done}/${ids.length})`;
 
-      if(!j || !j.ok) continue;
-      if(!j.steam || !j.steam.final || j.steam.final <= 0) continue;
+    async function worker(){
+      while(true){
+        if(allGames.length >= 200) break;
+        const i = idx++;
+        if(i >= ids.length) break;
 
-      // DLC filtre: worker name+type dönmüyorsa bile en azından title'a bakarak kaba filtre
-      if(j.type && j.type !== "game") continue;
+        const appid = ids[i];
+        const g = await fetchPrice(appid);
+        done++;
 
-      all.push({
-        appid: j.appid || id,
-        name: j.name || ("App " + id),
-        currency: j.steam.currency,
-        final: j.steam.final,
-        initial: j.steam.initial,
-        discount: j.steam.discount || 0,
-      });
+        if(g){
+          allGames.push(g);
+          // her 8 oyunda bir çiz (PC kasmasın)
+          if(allGames.length % 8 === 0) render();
+        }
 
-      // 200’e ulaştık mı? bitir
-      if(all.length >= 200) break;
-
-      // ara ara render
-      if(all.length % 10 === 0) render(all);
+        if(done % 25 === 0){
+          elStatus.textContent = `Fiyatlar yükleniyor… (${done}/${ids.length}) • Bulunan: ${allGames.length}`;
+        }
+      }
     }
 
-    render(all);
+    await Promise.all(new Array(concurrency).fill(0).map(worker));
+
+    allGames = allGames.slice(0, 200);
+    render();
   }
 
-  elSearch.addEventListener("input", ()=> render(all));
-  elLang.addEventListener("change", ()=> load().catch(showErr));
+  elSearch.addEventListener("input", () => {
+    // sadece filtreleme: yenileme yok
+    render();
+  });
+
+  elLang.addEventListener("change", () => load().catch(showErr));
 
   function showErr(e){
-    elErr.style.display="block";
-    elErr.textContent="Hata: " + (e?.message || e);
-    elStatus.textContent="Hata oluştu.";
-    elGrid.innerHTML="";
+    elErr.style.display = "block";
+    elErr.textContent = "Hata: " + (e?.message || e);
+    elStatus.textContent = "Hata oluştu.";
+    elGrid.innerHTML = "";
   }
 
   load().catch(showErr);
