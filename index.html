@@ -7,16 +7,14 @@
   <style>
     :root{
       --bg:#0b1222;
-      --card:#0f1a33;
       --muted:#8aa0c5;
       --border:#1d2a4a;
-      --ok:#22c55e;
-      --bad:#ef4444;
       --text:#eaf0ff;
+      --best:#22c55e;
     }
     body{margin:0;font-family:Arial,Helvetica,sans-serif;background:radial-gradient(900px 500px at 20% 0%, #132247 0%, var(--bg) 60%);color:var(--text);}
     .wrap{max-width:1000px;margin:0 auto;padding:26px;}
-    h1{margin:0 0 6px;font-size:34px;letter-spacing:.2px}
+    h1{margin:0 0 6px;font-size:34px}
     .sub{margin:0 0 16px;color:var(--muted)}
     .topbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:14px 0 18px}
     select,input{background:#0c1631;border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;outline:none}
@@ -37,6 +35,7 @@
     .btn:hover{border-color:#2c3c68}
     .err{color:#ffd3d3;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);padding:10px 12px;border-radius:12px;margin:12px 0;display:none}
     .tiny{font-size:12px;color:var(--muted);margin-top:8px}
+    .skeleton{height:14px;border-radius:8px;background:rgba(255,255,255,.06);flex:1}
   </style>
 </head>
 <body>
@@ -60,8 +59,7 @@
   </div>
 
 <script>
-  // === BURAYA DOKUNMA: Worker base URL ===
-  const STEAM_API_BASE = "https://steam-price-api.celikelbatuhan02.workers.dev";
+  const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
 
   const elGrid = document.getElementById("grid");
   const elStatus = document.getElementById("status");
@@ -71,22 +69,17 @@
   const elLang = document.getElementById("lang");
 
   let allGames = [];
+  let viewGames = [];
 
   function money(v, currency){
     if (v == null) return "—";
     const n = Number(v);
     if (!Number.isFinite(n)) return "—";
-    // TR’de Steam USD gösteriyor çoğu zaman. Yine de currency yazalım.
     return `${n.toFixed(2)} ${currency || ""}`.trim();
   }
 
-  function pickBestStore(game){
-    const s = game.steam?.final ?? null;
-    const e = game.epic?.final ?? null;
-    if (s == null && e == null) return null;
-    if (s != null && e == null) return "steam";
-    if (s == null && e != null) return "epic";
-    return (s <= e) ? "steam" : "epic";
+  function steamUrl(appid, cc){
+    return `https://store.steampowered.com/app/${appid}/?cc=${encodeURIComponent(cc)}`;
   }
 
   function render(list){
@@ -94,11 +87,6 @@
     const frag = document.createDocumentFragment();
 
     for(const g of list){
-      const best = pickBestStore(g);
-
-      const steamDiscount = (g.steam?.discount || 0) > 0 && (g.steam?.initial || 0) > (g.steam?.final || 0);
-      const epicDiscount = (g.epic?.discount || 0) > 0 && (g.epic?.initial || 0) > (g.epic?.final || 0);
-
       const card = document.createElement("div");
       card.className = "card";
 
@@ -112,30 +100,22 @@
       r1.className = "row";
       const left1 = document.createElement("div");
       left1.className = "store";
-      left1.innerHTML = `<span class="pill ${best==="steam" ? "best":""}">Steam</span><span class="badge">(${g.steam?.currency || ""})</span>`;
+      left1.innerHTML = `<span class="pill best">Steam</span><span class="badge">(${g.steam?.currency || ""})</span>`;
       const right1 = document.createElement("div");
       right1.className = "price";
-      right1.innerHTML = steamDiscount
-        ? `<span class="old">${money(g.steam.initial, g.steam.currency)}</span>${money(g.steam.final, g.steam.currency)}`
-        : `${money(g.steam?.final, g.steam?.currency)}`;
+
+      if(g.loading){
+        right1.innerHTML = `<div class="skeleton"></div>`;
+      } else {
+        const steamDiscount = (g.steam?.discount || 0) > 0 && (g.steam?.initial || 0) > (g.steam?.final || 0);
+        right1.innerHTML = steamDiscount
+          ? `<span class="old">${money(g.steam.initial, g.steam.currency)}</span>${money(g.steam.final, g.steam.currency)}`
+          : `${money(g.steam?.final, g.steam?.currency)}`;
+      }
+
       r1.appendChild(left1);
       r1.appendChild(right1);
       card.appendChild(r1);
-
-      // Epic row
-      const r2 = document.createElement("div");
-      r2.className = "row";
-      const left2 = document.createElement("div");
-      left2.className = "store";
-      left2.innerHTML = `<span class="pill ${best==="epic" ? "best":""}">Epic</span><span class="badge">(${g.epic?.currency || ""})</span>`;
-      const right2 = document.createElement("div");
-      right2.className = "price";
-      right2.innerHTML = epicDiscount
-        ? `<span class="old">${money(g.epic.initial, g.epic.currency)}</span>${money(g.epic.final, g.epic.currency)}`
-        : `${money(g.epic?.final, g.epic?.currency)}`;
-      r2.appendChild(left2);
-      r2.appendChild(right2);
-      card.appendChild(r2);
 
       // links
       const links = document.createElement("div");
@@ -144,24 +124,19 @@
       a1.className = "btn";
       a1.target = "_blank";
       a1.rel = "noopener";
-      a1.href = g.steam?.url || ("https://store.steampowered.com/app/" + g.appid);
+      a1.href = steamUrl(g.appid, currentCC());
       a1.textContent = "Steam'e Git";
-
-      const a2 = document.createElement("a");
-      a2.className = "btn";
-      a2.target = "_blank";
-      a2.rel = "noopener";
-      a2.href = g.epic?.url || ("https://store.epicgames.com/en-US/browse?q=" + encodeURIComponent(g.name));
-      a2.textContent = "Epic'e Git";
-
       links.appendChild(a1);
-      links.appendChild(a2);
       card.appendChild(links);
 
       frag.appendChild(card);
     }
 
     elGrid.appendChild(frag);
+  }
+
+  function currentCC(){
+    return elLang.value === "en" ? "us" : "tr";
   }
 
   function applyFilter(){
@@ -172,53 +147,100 @@
       list = allGames.filter(g => (g.name || "").toLowerCase().includes(q));
     }
 
-    elStatus.textContent = `Tamam. ${list.length} oyun (Steam+Epic).`;
+    viewGames = list;
+    elStatus.textContent = `Tamam. ${list.length} oyun (Steam).`;
     render(list);
+  }
+
+  async function fetchList(){
+    const cc = currentCC();
+    const r = await fetch(`${API}/steam/list?cc=${encodeURIComponent(cc)}`, { cache: "no-store" });
+    const j = await r.json();
+    if(!r.ok || !j.ok) throw new Error(j?.message || j?.error || "Liste API hata");
+    return j.appids || [];
+  }
+
+  async function fetchPrice(appid){
+    const cc = currentCC();
+    const r = await fetch(`${API}/steam/price?appid=${appid}&cc=${encodeURIComponent(cc)}`, { cache: "no-store" });
+    const j = await r.json();
+    if(!r.ok || !j.ok) return null;
+    return j.steam || null;
   }
 
   async function load(){
     elErr.style.display = "none";
     elTiny.textContent = "";
-    elStatus.textContent = "Yükleniyor…";
+    elStatus.textContent = "Liste alınıyor…";
+    allGames = [];
 
-    const l = elLang.value === "en" ? "english" : "turkish";
-    const cc = elLang.value === "en" ? "us" : "tr";
+    // 1) list
+    const appids = await fetchList();
 
-    const url = `${STEAM_API_BASE}/steam/games?limit=200&cc=${encodeURIComponent(cc)}&l=${encodeURIComponent(l)}`;
+    // 2) skeleton cards
+    allGames = appids.slice(0, 200).map(id => ({ appid: id, name: "Yükleniyor…", loading: true, steam: null }));
+    applyFilter();
 
-    try{
-      const r = await fetch(url, { cache: "no-store" });
-      const j = await r.json();
+    elStatus.textContent = `Fiyatlar yükleniyor… (0/${allGames.length})`;
 
-      if(!r.ok || !j.ok){
-        throw new Error(j?.message || j?.error || "API hata verdi");
+    // 3) fiyatları kontrollü şekilde çek (aynı anda 10 istek)
+    const concurrency = 10;
+    let done = 0;
+    let idx = 0;
+
+    async function worker(){
+      while(idx < allGames.length){
+        const i = idx++;
+        const g = allGames[i];
+
+        const steam = await fetchPrice(g.appid);
+
+        // free/price yok -> oyunu listeden çıkaracağız
+        if(!steam || !steam.final || steam.final <= 0){
+          allGames[i] = null;
+        } else {
+          // isim bazen appdetails filtresiyle gelmeyebilir; şimdilik appid göstermez diye:
+          // steam endpoint zaten name çekiyor, ama bazı durumlarda null olabilir.
+          const name = steam.name || g.name;
+          allGames[i] = { appid: g.appid, name: name || ("App " + g.appid), steam, loading: false };
+        }
+
+        done++;
+        if(done % 5 === 0){
+          // sık render yapıp kasmasın diye 5'te bir güncelle
+          const cleaned = allGames.filter(Boolean);
+          allGames = cleaned;
+          applyFilter();
+        }
+
+        elStatus.textContent = `Fiyatlar yükleniyor… (${done}/${Math.max(allGames.length, done)})`;
       }
-
-      allGames = (j.games || []);
-
-      // ekstra garanti: free varsa çıkar
-      allGames = allGames.filter(g => (g.steam?.final || 0) > 0 && (!g.epic || (g.epic.final || 0) > 0));
-
-      elStatus.textContent = `Tamam. ${allGames.length} oyun (Steam+Epic).`;
-      elTiny.textContent = `Kaynak: Steam (Top Sellers + Most Played). Epic fiyatları isimle bulunur; bazı oyunlarda Epic fiyatı boş kalabilir.`;
-      applyFilter();
-    }catch(e){
-      elErr.style.display = "block";
-      elErr.textContent = "Hata: " + (e?.message || e);
-      elStatus.textContent = "Hata oluştu.";
-      elGrid.innerHTML = "";
     }
+
+    await Promise.all(new Array(concurrency).fill(0).map(worker));
+
+    // final temizleme + render
+    allGames = allGames.filter(Boolean);
+    elStatus.textContent = `Tamam. ${allGames.length} oyun (Steam).`;
+    elTiny.textContent = `Not: Steam fiyatı olmayan/free olanlar otomatik gizlendi.`;
+    applyFilter();
   }
 
   elSearch.addEventListener("input", () => {
-    // hafif debounce
     window.clearTimeout(window.__t);
     window.__t = window.setTimeout(applyFilter, 120);
   });
 
-  elLang.addEventListener("change", load);
+  elLang.addEventListener("change", () => load().catch(showErr));
 
-  load();
+  function showErr(e){
+    elErr.style.display = "block";
+    elErr.textContent = "Hata: " + (e?.message || e);
+    elStatus.textContent = "Hata oluştu.";
+    elGrid.innerHTML = "";
+  }
+
+  load().catch(showErr);
 </script>
 </body>
 </html>
