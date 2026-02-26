@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Oyun Fiyat Takip (TR) - Test</title>
+<title>Oyun Fiyat Takip (TR) – Test</title>
 <style>
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
 .wrap{max-width:1100px;margin:0 auto;padding:20px}
@@ -38,12 +38,6 @@ const GAMES = [
   { title:"Red Dead Redemption 2", steam_appid: 1174180, epic_query:"Red Dead Redemption 2" },
   { title:"Grand Theft Auto V Enhanced", steam_appid: 3240220, epic_query:"Grand Theft Auto V" }
 ];
-
-// Basit CORS proxy (epic HTML/JSON çekmek için)
-function proxy(url){
-  // r.jina.ai çoğu sitede CORS ile text döndürür
-  return "https://r.jina.ai/http://" + url.replace(/^https?:\/\//,"");
-}
 
 function money(v,c){
   const n=Number(v);
@@ -86,68 +80,92 @@ async function getSteam(appid){
   return await r.json().catch(()=>null);
 }
 
-// ✅ Epic otomatik: önce arama sayfasından ilk /p/ slug bul → ürün sayfasından totalPrice çek
+// ✅ EPIC OTOMATİK (GraphQL)
 async function getEpicAuto(queryName){
-  // 1) Epic browse search HTML
-  const searchUrl = `https://store.epicgames.com/en-US/browse?q=${encodeURIComponent(queryName)}&sortBy=relevancy&sortDir=DESC`;
-  const sTxt = await fetch(proxy(searchUrl), {cache:"no-store"}).then(r=>r.text()).catch(()=>null);
-  if(!sTxt) return {ok:false, error:"search_fetch_failed"};
+  try{
+    const body = {
+      query: `
+        query searchStoreQuery($keywords: String!) {
+          Catalog {
+            searchStore(
+              country: "TR",
+              locale: "tr",
+              keywords: $keywords,
+              count: 1
+            ) {
+              elements {
+                title
+                productSlug
+                urlSlug
+                price(country: "TR") {
+                  totalPrice {
+                    discountPrice
+                    originalPrice
+                    currencyCode
+                  }
+                }
+              }
+            }
+          }
+        }
+      `,
+      variables: { keywords: queryName }
+    };
 
-  // Arama HTML içinde /p/slug yakala (ilk bulunan)
-  const mSlug = sTxt.match(/\/p\/([a-z0-9-]+)/i);
-  if(!mSlug) return {ok:false, error:"no_slug"};
+    const r = await fetch("https://store.epicgames.com/graphql", {
+      method:"POST",
+      headers:{ "content-type":"application/json" },
+      body: JSON.stringify(body)
+    });
 
-  const slug = mSlug[1];
-  const productUrl = `https://store.epicgames.com/p/${slug}`;
+    const j = await r.json().catch(()=>null);
+    const el = j?.data?.Catalog?.searchStore?.elements?.[0];
+    if(!el) return {ok:false};
 
-  // 2) Ürün sayfası HTML
-  const pTxt = await fetch(proxy(productUrl), {cache:"no-store"}).then(r=>r.text()).catch(()=>null);
-  if(!pTxt) return {ok:false, error:"product_fetch_failed", slug};
+    const tp = el.price?.totalPrice;
+    if(!tp) return {ok:false};
 
-  // 3) totalPrice JSON çek
-  const mPrice = pTxt.match(/"totalPrice":\s*({[^}]*})/);
-  if(!mPrice) return {ok:false, error:"price_not_found", slug};
+    const final = Number(tp.discountPrice)/100;
+    const initial = Number(tp.originalPrice)/100;
 
-  let tp;
-  try{ tp = JSON.parse(mPrice[1]); }catch{ return {ok:false, error:"price_parse_failed", slug}; }
+    let discount = 0;
+    if(initial > 0 && Number.isFinite(final) && Number.isFinite(initial)){
+      discount = Math.round((1 - final/initial)*100);
+      if(discount < 0) discount = 0;
+      if(discount > 99) discount = 99;
+    }
 
-  const final = Number(tp.discountPrice)/100;
-  const initial = Number(tp.originalPrice)/100;
+    const slug = el.productSlug || el.urlSlug;
 
-  let discount = 0;
-  if(initial > 0 && Number.isFinite(final) && Number.isFinite(initial)){
-    discount = Math.round((1 - final/initial) * 100);
-    if(discount < 0) discount = 0;
-    if(discount > 99) discount = 99;
+    return {
+      ok:true,
+      epic:{
+        currency: tp.currencyCode || "TRY",
+        final,
+        initial,
+        discount
+      },
+      epic_url: slug ? `https://store.epicgames.com/p/${slug}` : null
+    };
+
+  }catch{
+    return {ok:false};
   }
-
-  return {
-    ok:true,
-    epic:{
-      currency: tp.currencyCode || "TRY",
-      final, initial, discount
-    },
-    epic_url: productUrl,
-    slug
-  };
 }
 
 async function boot(){
   statusEl.textContent = "2 oyun test ediliyor: RDR2 + GTA V Enhanced";
-
   grid.innerHTML = "";
+
   const cards = new Map();
 
   for(const g of GAMES){
     const c = cardSkeleton(g);
     grid.appendChild(c);
     cards.set(g.steam_appid, c);
-
-    // Steam link
     c.querySelector("[data-steam-btn]").href = `https://store.steampowered.com/app/${g.steam_appid}`;
   }
 
-  // Paralel çek
   await Promise.all(GAMES.map(async (g)=>{
     const c = cards.get(g.steam_appid);
 
@@ -175,8 +193,10 @@ async function boot(){
       const badge = disc>0?`<span class="badge">-${disc}%</span>`:"";
       const old = disc>0?`<span class="old">${money(epic.epic.initial, epic.epic.currency)}</span>`:"";
       epicRow.innerHTML = `Epic: <span class="pill">Epic</span> ${old} <span>${money(epic.epic.final, epic.epic.currency)}</span> ${badge}`;
-      epicBtn.href = epic.epic_url;
-      epicBtn.style.display = "block";
+      if(epic.epic_url){
+        epicBtn.href = epic.epic_url;
+        epicBtn.style.display = "block";
+      }
     }else{
       epicRow.innerHTML = `Epic: <span class="pill">Bulunamadı</span>`;
     }
