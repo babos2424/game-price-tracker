@@ -55,7 +55,7 @@ const STEP_SHOW  = isMobile ? 40 : 100;
 let all=[];
 let shown=0;
 
-let epicEnabled = new Set();     // games.json’daki appid’ler
+let epicEnabled = new Set();     // games.json’daki steam_appid’ler
 let epicCache = new Map();       // appid -> epic result
 
 function money(v,c){
@@ -208,7 +208,12 @@ function runEpicLazy(){
           return;
         }
 
-        line.innerHTML = `Epic: <span class="pill">Epic</span> <span>${money(epic.epic.final, epic.epic.currency)}</span>`;
+        const ed = Number(epic?.epic?.discount||0);
+        const eold = ed>0 ? `<span class="old">${money(epic.epic.initial, epic.epic.currency)}</span>` : "";
+
+        line.innerHTML =
+          `Epic: <span class="pill">Epic</span> ${eold} <span>${money(epic.epic.final, epic.epic.currency)}</span>` +
+          (ed>0 ? ` <span class="badge">-${ed}%</span>` : ``);
 
         const btn = card.querySelector('[data-epic="btn"]');
         if(btn && epic.epic_url){
@@ -216,7 +221,6 @@ function runEpicLazy(){
           btn.style.display = "block";
         }
 
-        // en ucuz yeşil
         const best = bestStoreClass(Number(g?.steam?.final), Number(epic?.epic?.final));
         const steamPill = card.querySelector('[data-steam="row"] .pill');
         const epicPill = line.querySelector(".pill");
