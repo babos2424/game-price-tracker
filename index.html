@@ -1,15 +1,254 @@
-async function fetchPrice(appid){
-  const cc = currentCC();
-  const r = await fetch(`${API}/steam/price?appid=${appid}&cc=${encodeURIComponent(cc)}`, { cache: "no-store" });
-  const j = await r.json();
-  if(!r.ok || !j.ok) return null;
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Oyun Fiyat Takip</title>
+  <style>
+    :root{
+      --bg:#0b1222;
+      --muted:#8aa0c5;
+      --border:#1d2a4a;
+      --text:#eaf0ff;
+    }
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:radial-gradient(900px 500px at 20% 0%, #132247 0%, var(--bg) 60%);color:var(--text);}
+    .wrap{max-width:1000px;margin:0 auto;padding:26px;}
+    h1{margin:0 0 6px;font-size:34px}
+    .sub{margin:0 0 16px;color:var(--muted)}
+    .topbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:14px 0 18px}
+    select,input{background:#0c1631;border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;outline:none}
+    input{flex:1;min-width:260px}
+    .status{margin-left:auto;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));border:1px solid var(--border);border-radius:14px;padding:14px}
+    .title{font-size:16px;font-weight:700;margin:0 0 10px;line-height:1.25}
+    .row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0}
+    .badge{font-size:12px;color:var(--muted)}
+    .price{font-weight:800}
+    .old{color:var(--muted);text-decoration:line-through;margin-right:8px;font-weight:700}
+    .store{display:flex;gap:8px;align-items:center}
+    .pill{font-size:12px;border:1px solid var(--border);padding:4px 8px;border-radius:999px;color:var(--muted)}
+    .best{border-color:rgba(34,197,94,.65); box-shadow:0 0 0 1px rgba(34,197,94,.25) inset}
+    .links{display:flex;gap:10px;margin-top:10px}
+    .btn{flex:1;text-align:center;text-decoration:none;color:var(--text);border:1px solid var(--border);padding:10px 10px;border-radius:12px;background:#0c1631}
+    .btn:hover{border-color:#2c3c68}
+    .err{color:#ffd3d3;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);padding:10px 12px;border-radius:12px;margin:12px 0;display:none}
+    .tiny{font-size:12px;color:var(--muted);margin-top:8px}
+    .skeleton{height:14px;border-radius:8px;background:rgba(255,255,255,.06);flex:1}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Oyun Fiyat Takip</h1>
+    <p class="sub">Steam + Epic — 200 oyun (free yok). En ucuz mağaza yeşil. İndirimde eski fiyat üstü çizili.</p>
 
-  // Sadece oyun istiyoruz:
-  // Steam types: game, dlc, demo, soundtrack, application, video, series, episode...
-  if(j.type !== "game") return { drop: true };
+    <div class="topbar">
+      <select id="lang">
+        <option value="tr">TR</option>
+        <option value="en">EN</option>
+      </select>
 
-  // Free ve fiyat yoklar zaten steam:null dönüyor
-  if(!j.steam || !j.steam.final || j.steam.final <= 0) return { drop: true };
+      <input id="search" placeholder="Oyun ara (isim yaz)..." />
+      <div class="status" id="status">Yükleniyor…</div>
+    </div>
 
-  return { name: j.name || null, steam: j.steam };
-}
+    <div class="err" id="err"></div>
+    <div class="grid" id="grid"></div>
+    <div class="tiny" id="tiny"></div>
+  </div>
+
+<script>
+  const API = "https://steam-price-api.celikelbatuhan02.workers.dev";
+
+  const elGrid = document.getElementById("grid");
+  const elStatus = document.getElementById("status");
+  const elErr = document.getElementById("err");
+  const elTiny = document.getElementById("tiny");
+  const elSearch = document.getElementById("search");
+  const elLang = document.getElementById("lang");
+
+  let allGames = [];
+  let viewGames = [];
+
+  function money(v, currency){
+    if (v == null) return "—";
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "—";
+    return `${n.toFixed(2)} ${currency || ""}`.trim();
+  }
+
+  function currentCC(){
+    return elLang.value === "en" ? "us" : "tr";
+  }
+
+  function steamUrl(appid, cc){
+    return `https://store.steampowered.com/app/${appid}/?cc=${encodeURIComponent(cc)}`;
+  }
+
+  function render(list){
+    elGrid.innerHTML = "";
+    const frag = document.createDocumentFragment();
+
+    for(const g of list){
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = g.name || ("App " + g.appid);
+      card.appendChild(title);
+
+      const r1 = document.createElement("div");
+      r1.className = "row";
+
+      const left1 = document.createElement("div");
+      left1.className = "store";
+      left1.innerHTML = `<span class="pill best">Steam</span><span class="badge">(${g.steam?.currency || ""})</span>`;
+
+      const right1 = document.createElement("div");
+      right1.className = "price";
+
+      if(g.loading){
+        right1.innerHTML = `<div class="skeleton"></div>`;
+      } else {
+        const steamDiscount = (g.steam?.discount || 0) > 0 && (g.steam?.initial || 0) > (g.steam?.final || 0);
+        right1.innerHTML = steamDiscount
+          ? `<span class="old">${money(g.steam.initial, g.steam.currency)}</span>${money(g.steam.final, g.steam.currency)}`
+          : `${money(g.steam?.final, g.steam?.currency)}`;
+      }
+
+      r1.appendChild(left1);
+      r1.appendChild(right1);
+      card.appendChild(r1);
+
+      const links = document.createElement("div");
+      links.className = "links";
+      const a1 = document.createElement("a");
+      a1.className = "btn";
+      a1.target = "_blank";
+      a1.rel = "noopener";
+      a1.href = steamUrl(g.appid, currentCC());
+      a1.textContent = "Steam'e Git";
+      links.appendChild(a1);
+      card.appendChild(links);
+
+      frag.appendChild(card);
+    }
+
+    elGrid.appendChild(frag);
+  }
+
+  function applyFilter(){
+    const q = (elSearch.value || "").toLowerCase().trim();
+    let list = allGames;
+
+    if(q){
+      list = allGames.filter(g => (g.name || "").toLowerCase().includes(q));
+    }
+
+    viewGames = list;
+    elStatus.textContent = `Tamam. ${list.length} oyun (Steam).`;
+    render(list);
+  }
+
+  async function fetchList(){
+    const cc = currentCC();
+    const r = await fetch(`${API}/steam/list?cc=${encodeURIComponent(cc)}&limit=500`, { cache: "no-store" });
+    const j = await r.json();
+    if(!r.ok || !j.ok) throw new Error(j?.message || j?.error || "Liste API hata");
+    return j.appids || [];
+  }
+
+  async function fetchPrice(appid){
+    const cc = currentCC();
+    const r = await fetch(`${API}/steam/price?appid=${appid}&cc=${encodeURIComponent(cc)}`, { cache: "no-store" });
+    const j = await r.json();
+    if(!r.ok || !j.ok) return null;
+
+    // ✅ sadece oyun
+    if(j.type && j.type !== "game") return { drop: true };
+
+    // ✅ free/fiyatsız
+    if(!j.steam || !j.steam.final || j.steam.final <= 0) return { drop: true };
+
+    return { name: j.name || null, steam: j.steam };
+  }
+
+  async function load(){
+    elErr.style.display = "none";
+    elTiny.textContent = "";
+    elStatus.textContent = "Liste alınıyor…";
+    allGames = [];
+
+    const appids = await fetchList();
+
+    // daha fazla appid’den başlayalım ki filtre sonrası 200’e yaklaşsın
+    const seed = appids.slice(0, 500);
+
+    // skeleton
+    allGames = seed.map(id => ({ appid: id, name: "Yükleniyor…", loading: true, steam: null }));
+    applyFilter();
+
+    elStatus.textContent = `Fiyatlar yükleniyor… (0/${allGames.length})`;
+
+    const concurrency = 10;
+    let done = 0;
+    let idx = 0;
+
+    async function worker(){
+      while(true){
+        const i = idx++;
+        if(i >= allGames.length) break;
+
+        const g = allGames[i];
+        const res = await fetchPrice(g.appid);
+
+        if(!res || res.drop){
+          allGames[i] = null;
+        } else {
+          allGames[i] = { appid: g.appid, name: res.name || ("App " + g.appid), steam: res.steam, loading: false };
+        }
+
+        done++;
+
+        // 5'te bir render
+        if(done % 5 === 0){
+          allGames = allGames.filter(Boolean);
+          // 200'e ulaştıysak daha fazlasını çekmeyi bırak
+          if(allGames.length >= 200){
+            allGames = allGames.slice(0, 200);
+            break;
+          }
+          applyFilter();
+        }
+
+        elStatus.textContent = `Fiyatlar yükleniyor… (${done}/${Math.max(done, allGames.length)})`;
+      }
+    }
+
+    await Promise.all(new Array(concurrency).fill(0).map(worker));
+
+    allGames = allGames.filter(Boolean).slice(0, 200);
+    elStatus.textContent = `Tamam. ${allGames.length} oyun (Steam).`;
+    elTiny.textContent = `DLC/Demo/Soundtrack ve free/fiyatsız içerikler otomatik kaldırıldı.`;
+    applyFilter();
+  }
+
+  elSearch.addEventListener("input", () => {
+    window.clearTimeout(window.__t);
+    window.__t = window.setTimeout(applyFilter, 120);
+  });
+
+  elLang.addEventListener("change", () => load().catch(showErr));
+
+  function showErr(e){
+    elErr.style.display = "block";
+    elErr.textContent = "Hata: " + (e?.message || e);
+    elStatus.textContent = "Hata oluştu.";
+    elGrid.innerHTML = "";
+  }
+
+  load().catch(showErr);
+</script>
+</body>
+</html>
