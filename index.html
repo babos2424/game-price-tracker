@@ -4,24 +4,40 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Steam Oyunları (TR)</title>
+
 <style>
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
 .wrap{max-width:1100px;margin:0 auto;padding:20px}
 h1{margin:0 0 15px}
 .top{display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
-input{flex:1;min-width:220px;padding:10px;border-radius:10px;border:1px solid #1d2a4a;background:#111c3a;color:#fff;outline:none}
-.status{color:#8aa0c5;white-space:pre-wrap}
+input{
+  flex:1; min-width:220px;
+  padding:10px;border-radius:10px;border:1px solid #1d2a4a;
+  background:#111c3a;color:white;outline:none;
+}
+.status{color:#8aa0c5}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .card{background:#111c3a;border:1px solid #1d2a4a;border-radius:14px;padding:14px}
 .title{font-weight:700;margin-bottom:8px}
 .old{text-decoration:line-through;color:#8aa0c5;margin-right:8px}
-.btn{display:block;margin-top:10px;text-align:center;text-decoration:none;color:#fff;border:1px solid #1d2a4a;padding:8px;border-radius:10px}
+.btn{
+  display:block;margin-top:10px;text-align:center;text-decoration:none;color:white;
+  border:1px solid #1d2a4a;padding:8px;border-radius:10px;
+}
 .badge{background:#22c55e;padding:3px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+
 .moreWrap{margin:14px 0}
-.moreBtn{width:100%;padding:12px;border-radius:12px;background:#0f1a37;color:#fff;border:1px solid #1d2a4a;cursor:pointer;font-weight:700}
+.moreBtn{
+  width:100%;
+  padding:12px;border-radius:12px;
+  background:#0f1a37;color:#fff;
+  border:1px solid #1d2a4a;
+  cursor:pointer;font-weight:700;
+}
 .moreBtn:disabled{opacity:.55;cursor:not-allowed}
 </style>
 </head>
+
 <body>
 <div class="wrap">
   <h1>Steam Oyunları (TR)</h1>
@@ -46,16 +62,30 @@ const search=document.getElementById("search");
 const moreBtn=document.getElementById("moreBtn");
 
 const isMobile = window.matchMedia("(max-width: 640px)").matches;
-const FIRST_SHOW = isMobile ? 60 : 150;
-const STEP_SHOW  = isMobile ? 40 : 100;
 
-let all=[];         // snapshot'tan gelen full liste
+// mobil beyaz ekran olmasın diye daha hafif
+const CONCURRENCY = isMobile ? 4 : 10;
+const FIRST_SHOW  = isMobile ? 40 : 100;
+const STEP_SHOW   = isMobile ? 40 : 100;
+
+let ids=[];
 let shownCount=0;
+let rendered=0;
+
+// indirim yüzdesine göre bucket (0..100) -> sürekli sort yok
+const buckets = Array.from({length:101}, ()=>[]);
+let ordered=[];
 
 function money(v,c){
-  const n=Number(v);
+  const n = Number(v);
   if(!Number.isFinite(n)) return "— "+(c||"TRY");
   return n.toFixed(2)+" "+(c||"TRY");
+}
+
+function withTimeoutFetch(url, ms=12000){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms);
+  return fetch(url, {signal: ctrl.signal}).finally(()=>clearTimeout(t));
 }
 
 function addCard(g){
@@ -63,27 +93,21 @@ function addCard(g){
   card.className="card";
   card.dataset.name=(g.name||"").toLowerCase();
 
-  const discount=Number(g?.steam?.discount||0);
-  const showDiscount=discount>0;
-  const badge=showDiscount?`<span class="badge">-${discount}%</span>`:"";
-  const oldPrice=showDiscount?`<span class="old">${money(g.steam.initial,g.steam.currency)}</span>`:"";
+  const discount = Number(g?.steam?.discount || 0);
+  const showDiscount = discount > 0;
+
+  const badge = showDiscount ? `<span class="badge">-${discount}%</span>` : ``;
+  const oldPrice = showDiscount ? `<span class="old">${money(g.steam.initial,g.steam.currency)}</span>` : ``;
 
   card.innerHTML=`
     <div class="title">${g.name}${badge}</div>
     <div>${oldPrice}${money(g.steam.final,g.steam.currency)}</div>
-    <a class="btn" target="_blank" href="https://store.steampowered.com/app/${g.appid}">Steam'e Git</a>
+    <a class="btn" target="_blank" href="https://store.steampowered.com/app/${g.appid}">
+      Steam'e Git
+    </a>
   `;
-  return card;
-}
 
-function render(){
-  grid.innerHTML="";
-  const frag=document.createDocumentFragment();
-  const slice=all.slice(0, shownCount);
-  for(const g of slice) frag.appendChild(addCard(g));
-  grid.appendChild(frag);
-  applySearch();
-  moreBtn.disabled = (shownCount >= all.length);
+  grid.appendChild(card);
 }
 
 function applySearch(){
@@ -95,43 +119,96 @@ function applySearch(){
   }
 }
 
-let tmr;
+let renderTimer;
 search.addEventListener("input", ()=>{
-  clearTimeout(tmr);
-  tmr=setTimeout(applySearch,120);
+  clearTimeout(renderTimer);
+  renderTimer=setTimeout(applySearch, 120);
 });
 
-moreBtn.addEventListener("click", ()=>{
-  shownCount = Math.min(shownCount + STEP_SHOW, all.length);
-  render();
-});
+function rebuildOrdered(){
+  const out=[];
+  for(let d=100; d>=0; d--){
+    const arr=buckets[d];
+    for(let i=0;i<arr.length;i++) out.push(arr[i]);
+  }
+  ordered=out;
+}
+
+function renderMore(){
+  const target = Math.min(shownCount, ordered.length);
+  while(rendered < target){
+    addCard(ordered[rendered]);
+    rendered++;
+  }
+  applySearch();
+  moreBtn.disabled = (shownCount >= ordered.length);
+}
 
 async function load(){
-  try{
-    statusEl.textContent="Snapshot alınıyor...";
-    const r=await fetch(`${API}/steam/snapshot?limit=250`); // worker cache’li
-    const j=await r.json().catch(()=>null);
+  statusEl.textContent="Liste alınıyor...";
 
-    if(!j || !j.ok || !Array.isArray(j.items)){
-      statusEl.textContent="Hata: snapshot alınamadı.";
-      return;
-    }
-
-    all = j.items;
-    shownCount = Math.min(FIRST_SHOW, all.length);
-    render();
-
-    moreBtn.disabled = false;
-
-    const cached = j.cached ? "CACHE" : "FRESH";
-    statusEl.textContent = `Toplam ${all.length} oyun • ${cached} • ${j.ts || ""}`.trim();
-
-  }catch(e){
-    statusEl.textContent="Hata: bağlantı/timeout";
+  // 4 sayfa = 200 oyun (topsellers) -> TR listesi
+  for(let i=0;i<4;i++){
+    try{
+      const r=await withTimeoutFetch(`${API}/steam/list?start=${i*50}`, 12000);
+      const j=await r.json().catch(()=>null);
+      if(j && j.ok && Array.isArray(j.appids)) ids.push(...j.appids);
+    }catch(e){}
   }
+  ids = [...new Set(ids)];
+
+  statusEl.textContent="Oyunlar yükleniyor...";
+  let index=0;
+  let okCount=0;
+
+  async function worker(){
+    while(index < ids.length){
+      const id = ids[index++];
+      try{
+        const r=await withTimeoutFetch(`${API}/steam/price?appid=${id}`, 12000);
+        const j=await r.json().catch(()=>null);
+        if(!j || !j.ok) continue;
+
+        const d = Math.max(0, Math.min(100, Number(j?.steam?.discount||0)));
+        buckets[d].push(j);
+        okCount++;
+
+        if(okCount === FIRST_SHOW){
+          rebuildOrdered();
+          shownCount = FIRST_SHOW;
+          renderMore();
+          moreBtn.disabled = false;
+        }
+
+        if(okCount % 15 === 0){
+          statusEl.textContent = `Toplam ${okCount} oyun (Listede ${ids.length})`;
+        }
+
+      }catch(e){}
+    }
+  }
+
+  await Promise.all(Array(CONCURRENCY).fill(0).map(worker));
+
+  rebuildOrdered();
+  if(shownCount === 0){
+    shownCount = Math.min(FIRST_SHOW, ordered.length);
+    renderMore();
+  }else{
+    renderMore();
+  }
+
+  moreBtn.disabled = (shownCount >= ordered.length);
+  statusEl.textContent = `Toplam ${ordered.length} oyun`;
 }
+
+moreBtn.addEventListener("click", ()=>{
+  shownCount = Math.min(shownCount + STEP_SHOW, ordered.length);
+  renderMore();
+});
 
 load();
 </script>
+
 </body>
 </html>
