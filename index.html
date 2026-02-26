@@ -4,20 +4,77 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Oyun Fiyat Takip</title>
+
 <style>
-body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
-.wrap{max-width:1100px;margin:0 auto;padding:22px}
-h1{margin:0 0 6px}
-.top{display:flex;gap:12px;align-items:center;margin:15px 0}
-input{flex:1;padding:10px;border-radius:10px;border:1px solid #1d2a4a;background:#0c1631;color:white}
-.status{color:#8aa0c5}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
-.card{background:#0f1a33;border:1px solid #1d2a4a;border-radius:14px;padding:14px}
-.title{font-weight:700;margin-bottom:8px}
-.old{text-decoration:line-through;color:#8aa0c5;margin-right:8px}
-.btn{display:block;margin-top:10px;text-align:center;text-decoration:none;color:white;border:1px solid #1d2a4a;padding:8px;border-radius:10px}
+body{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:#0b1222;
+  color:#eaf0ff;
+}
+.wrap{
+  max-width:1100px;
+  margin:0 auto;
+  padding:22px;
+}
+h1{margin:0 0 10px}
+.top{
+  display:flex;
+  gap:12px;
+  align-items:center;
+  margin-bottom:20px;
+}
+input{
+  flex:1;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid #1d2a4a;
+  background:#0f1a33;
+  color:white;
+}
+.status{
+  color:#8aa0c5;
+  min-width:150px;
+  text-align:right;
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:14px;
+}
+.card{
+  background:#111c3a;
+  border:1px solid #1d2a4a;
+  border-radius:14px;
+  padding:14px;
+}
+.title{
+  font-weight:700;
+  margin-bottom:8px;
+}
+.old{
+  text-decoration:line-through;
+  color:#8aa0c5;
+  margin-right:8px;
+}
+.btn{
+  display:block;
+  margin-top:10px;
+  text-align:center;
+  text-decoration:none;
+  color:white;
+  border:1px solid #1d2a4a;
+  padding:8px;
+  border-radius:10px;
+}
+.loader{
+  text-align:center;
+  padding:30px;
+  color:#8aa0c5;
+}
 </style>
 </head>
+
 <body>
 <div class="wrap">
 <h1>Oyun Fiyat Takip</h1>
@@ -28,19 +85,25 @@ input{flex:1;padding:10px;border-radius:10px;border:1px solid #1d2a4a;background
 </div>
 
 <div class="grid" id="grid"></div>
+<div class="loader" id="loader">Aşağı kaydırdıkça yüklenir...</div>
+
 </div>
 
 <script>
 const API="https://steam-price-api.celikelbatuhan02.workers.dev";
 const grid=document.getElementById("grid");
 const statusEl=document.getElementById("status");
+const loader=document.getElementById("loader");
 const search=document.getElementById("search");
 
 let all=[];
 let page=0;
 let loading=false;
+let finished=false;
 
-function money(v,c){return Number(v).toFixed(2)+" "+c;}
+function money(v,c){
+  return Number(v).toFixed(2)+" "+c;
+}
 
 function render(){
   const q=search.value.toLowerCase().trim();
@@ -73,37 +136,56 @@ function render(){
 }
 
 async function loadMore(){
-  if(loading) return;
+  if(loading||finished) return;
   loading=true;
+  loader.textContent="Yükleniyor...";
 
-  statusEl.textContent="Yükleniyor...";
-  const listRes=await fetch(`${API}/steam/list?start=${page*50}`);
-  const listJson=await listRes.json();
-  const ids=listJson.appids||[];
+  try{
+    const listRes=await fetch(`${API}/steam/list?start=${page*50}`);
+    const listJson=await listRes.json();
 
-  for(const id of ids){
-    const r=await fetch(`${API}/steam/price?appid=${id}`);
-    const j=await r.json().catch(()=>null);
-    if(!j||!j.ok) continue;
+    if(!listJson.ok || !listJson.appids.length){
+      finished=true;
+      loader.textContent="Daha fazla oyun yok.";
+      return;
+    }
 
-    all.push(j);
+    for(const id of listJson.appids){
+      const r=await fetch(`${API}/steam/price?appid=${id}`);
+      const j=await r.json().catch(()=>null);
+      if(!j||!j.ok) continue;
+      if(!j.name||!j.steam) continue;
+
+      all.push(j);
+    }
+
+    page++;
+    render();
+  }
+  catch(e){
+    console.log(e);
   }
 
-  page++;
   loading=false;
-  render();
+  loader.textContent="Aşağı kaydırdıkça yüklenir...";
 }
 
-// sonsuz scroll
+// Scroll garantili
 window.addEventListener("scroll",()=>{
-  if(window.innerHeight+window.scrollY>=document.body.offsetHeight-200){
+  const scrollBottom = window.innerHeight + window.scrollY;
+  const pageHeight = document.documentElement.scrollHeight;
+
+  if(pageHeight - scrollBottom < 500){
     loadMore();
   }
 });
 
 search.addEventListener("input",render);
 
+// İlk yüklemede 2 sayfa otomatik
 loadMore();
+setTimeout(loadMore,1000);
 </script>
+
 </body>
 </html>
