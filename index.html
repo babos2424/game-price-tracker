@@ -1,363 +1,264 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Oyun Fiyat Takip</title>
   <style>
-    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#0f172a;color:#e5e7eb}
-    .wrap{max-width:980px;margin:0 auto;padding:28px}
-    h1{margin:0 0 8px;font-size:34px;color:#fff;text-align:center}
-    .sub{margin:0 0 18px;color:#94a3b8;text-align:center}
-
-    .toolbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:10px 0 18px}
-    select,input,button{
-      background:#111c33;border:1px solid #223a66;color:#e5e7eb;
-      border-radius:10px;padding:10px 12px;font-size:14px;outline:none
+    :root{
+      --bg:#0b1020; --panel:#0e1a33; --panel2:#0c1730;
+      --text:#e5e7eb; --muted:#94a3b8; --border:#223255;
+      --green:#22c55e; --red:#ef4444; --yellow:#f59e0b;
+      --btn:#12234a;
     }
-    button{cursor:pointer}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#070b16, #0b1020);color:var(--text)}
+    .wrap{max-width:1100px;margin:0 auto;padding:20px}
+    .topbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .left{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    select,input,button{
+      border:1px solid var(--border); background:rgba(17,28,51,.7); color:var(--text);
+      padding:10px 12px;border-radius:10px; outline:none;
+    }
+    input{min-width:240px}
+    button{background:var(--btn); cursor:pointer}
     button:hover{filter:brightness(1.08)}
-
-    .msg{color:#94a3b8;text-align:center;margin:8px 0 16px}
-
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+    .hint{color:var(--muted); font-size:13px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px}
     .card{
-      background:#111c33;border:1px solid #223a66;border-radius:18px;
-      padding:16px;box-shadow:0 8px 28px rgba(0,0,0,.22)
+      background:rgba(14,26,51,.7);
+      border:1px solid rgba(34,50,85,.9);
+      border-radius:18px;
+      padding:14px;
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
     }
     .title{font-size:20px;font-weight:800;margin:0 0 8px}
-    .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
-    .label{color:#93c5fd;font-size:13px;margin-top:6px}
-    .muted{opacity:.75}
-
-    .priceRow{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
-    .old{opacity:.65}
-    .new{font-weight:900;font-size:18px}
-
-    .badge{
-      margin-left:auto;background:#22c55e;color:#052e14;font-weight:900;
-      padding:6px 10px;border-radius:999px;font-size:12px
+    .row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin:6px 0}
+    .store{color:#cbd5e1;font-weight:700;font-size:13px}
+    .price{font-size:15px}
+    .muted{color:var(--muted)}
+    .strike{text-decoration:line-through; opacity:.7; margin-right:8px}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,.12)}
+    .badge-sale{background:rgba(245,158,11,.12);color:#fbbf24}
+    .badge-miss{background:rgba(148,163,184,.10);color:#cbd5e1}
+    .btnrow{display:flex;gap:10px;margin-top:10px}
+    .openbtn{
+      flex:1; text-align:center; text-decoration:none;
+      padding:10px 12px;border-radius:12px;
+      border:1px solid var(--border);
+      background:rgba(17,28,51,.7); color:var(--text);
+      font-weight:800;
     }
-
-    .btns{display:flex;gap:10px;margin-top:12px}
-    .btn{
-      flex:1;text-align:center;text-decoration:none;
-      background:#0b1226;border:1px solid #223a66;color:#e5e7eb;
-      padding:10px 12px;border-radius:12px;font-weight:800
-    }
-    .btn.primary{background:#22c55e;border-color:#22c55e;color:#052e14}
-    .btn:hover{filter:brightness(1.08)}
-
-    .small{font-size:12px;color:#94a3b8;margin-top:10px}
+    .openbtn.win{background:rgba(34,197,94,.15); border-color:rgba(34,197,94,.55)}
+    .openbtn:hover{filter:brightness(1.12)}
+    .tiny{font-size:12px;color:var(--muted);margin-top:10px}
+    .status{margin-top:6px;color:var(--muted)}
+    .pill{padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04)}
   </style>
 </head>
-
 <body>
   <div class="wrap">
-    <h1>Oyun Fiyat Takip</h1>
-    <p class="sub">Steam + Epic fiyatlarını karşılaştır.</p>
+    <div class="topbar">
+      <div class="left">
+        <select id="country">
+          <option value="TR" selected>Türkiye</option>
+          <option value="US">USA</option>
+          <option value="GB">UK</option>
+          <option value="DE">Germany</option>
+        </select>
 
-    <div class="toolbar">
-      <select id="country">
-        <option value="TR" selected>Türkiye</option>
-        <option value="US">USA</option>
-        <option value="DE">Germany</option>
-      </select>
+        <select id="limit">
+          <option value="50">50 oyun</option>
+          <option value="100">100 oyun</option>
+          <option value="150">150 oyun</option>
+          <option value="200" selected>200 oyun</option>
+        </select>
 
-      <select id="limit">
-        <option value="50">50 oyun</option>
-        <option value="100">100 oyun</option>
-        <option value="200" selected>200 oyun</option>
-      </select>
+        <input id="q" placeholder="Oyun ara..." />
+        <button id="load">Yükle</button>
+      </div>
 
-      <input id="search" placeholder="Oyun ara..." />
-      <button id="loadBtn">Yükle</button>
+      <div class="hint pill" id="meta">Hazır.</div>
     </div>
 
-    <div id="msg" class="msg">Hazır.</div>
-    <div id="grid" class="grid"></div>
+    <div class="status" id="status"></div>
+    <div class="grid" id="grid"></div>
+    <div class="tiny" id="foot"></div>
   </div>
 
 <script>
-/** =========================
- *  AYARLAR
- *  ========================= */
-const WORKER_BASE = "https://steam-price-api.celikelbatuhan02.workers.dev";
-const STEAM_FIXED_USD_TRY = 35.00; // ✅ Sabit kur: değişmesin istiyorsun ya, tek yer burası.
+  // ✅ BURAYI KENDİ WORKER'ININ URL'İYLE DEĞİŞTİR
+  const API_BASE = "https://steam-price-api.celikelbatuhan02.workers.dev";
 
-/** Basit oyun listesi (örnek). İstersen sonra “en çok oynananlar”ı otomatik çekeriz. */
-const ALL_GAMES = [
-  { name: "Counter-Strike 2", steamAppId: 730, epicSlug: null },
-  { name: "PUBG: BATTLEGROUNDS", steamAppId: 578080, epicSlug: null },
-  { name: "Euro Truck Simulator 2", steamAppId: 227300, epicSlug: null },
-  { name: "Black Desert", steamAppId: 582660, epicSlug: null },
-  { name: "ARC Raiders", steamAppId: 1808500, epicSlug: null },
-  { name: "Resident Evil Requiem", steamAppId: 3764200, epicSlug: null },
-  { name: "Grand Theft Auto V", steamAppId: 271590, epicSlug: "grand-theft-auto-v" }
-];
+  const elGrid = document.getElementById("grid");
+  const elStatus = document.getElementById("status");
+  const elMeta = document.getElementById("meta");
+  const elFoot = document.getElementById("foot");
 
-/** =========================
- *  FORMAT / PARSE
- *  ========================= */
-function fmtTRY(amount){
-  return new Intl.NumberFormat("tr-TR",{style:"currency",currency:"TRY"}).format(amount);
-}
-function parseNumberFromText(t){
-  if(t==null) return null;
-  const s = String(t).replace(",", ".");
-  const m = s.match(/(\d+(\.\d+)?)/);
-  return m ? Number(m[1]) : null;
-}
-function usdToTryFixed(usd){
-  if(usd==null || Number.isNaN(usd)) return null;
-  return usd * STEAM_FIXED_USD_TRY;
-}
-function epicMinorToTry(minor, decimals=2){
-  if(minor==null) return null;
-  return Number(minor) / Math.pow(10, decimals);
-}
+  const elCountry = document.getElementById("country");
+  const elLimit = document.getElementById("limit");
+  const elQ = document.getElementById("q");
+  const elLoad = document.getElementById("load");
 
-/** =========================
- *  EPIC FETCH
- *  ========================= */
-async function fetchEpic(slug, country="TR", locale="tr"){
-  if(!slug) return { ok:false, error:"no_slug" };
-  try{
-    const r = await fetch(`${WORKER_BASE}/epic?slug=${encodeURIComponent(slug)}&country=${encodeURIComponent(country)}&locale=${encodeURIComponent(locale)}`);
-    const j = await r.json();
-    return j;
-  }catch(e){
-    return { ok:false, error:"epic_fetch_failed", message:String(e) };
+  let baseGames = [];   // {appid,name}
+  let priced = [];      // merged {appid,name,steam,epic}
+
+  elLoad.addEventListener("click", () => loadAll());
+  elQ.addEventListener("input", () => render());
+
+  async function loadAll() {
+    elStatus.textContent = "Oyun listesi alınıyor...";
+    elGrid.innerHTML = "";
+    priced = [];
+    baseGames = [];
+
+    const limit = Number(elLimit.value || 200);
+    const cc = (elCountry.value || "TR").toLowerCase();
+    const country = (elCountry.value || "TR").toUpperCase();
+
+    // 1) games
+    const g = await fetch(`${API_BASE}/api/games?limit=${limit}&cc=${cc}`).then(r => r.json());
+    baseGames = (g.games || []).slice(0, limit);
+
+    elStatus.textContent = `Fiyatlar alınıyor... (Steam + Epic)`;
+    elMeta.textContent = `${baseGames.length} oyun listelendi`;
+
+    // 2) prices
+    const p = await fetch(`${API_BASE}/api/prices?cc=${cc}&country=${country}&currency=TRY`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ games: baseGames, limit })
+    }).then(r => r.json());
+
+    const items = Array.isArray(p.items) ? p.items : [];
+
+    // Bedava oyunları çıkar (Steam free veya final 0)
+    priced = items.filter(it => {
+      const s = it.steam;
+      if (!s || !s.available) return true; // steam yoksa epic'e bakabilir
+      if (s.is_free) return false;
+      if (Number(s.final_try) === 0) return false;
+      return true;
+    }).slice(0, limit);
+
+    elStatus.textContent = `Steam + Epic fiyatları yüklendi.`;
+    elFoot.textContent = `Kur: 1 USD ≈ ${p.usd_try?.toFixed?.(4) ?? "?"} TRY (otomatik)`;
+    render();
   }
-}
-function renderEpicPriceHTML(epicData){
-  if(!epicData?.ok) return `<span class="muted">Bulunamadı</span>`;
-  const tp = epicData.epic?.totalPrice;
-  if(!tp) return `<span class="muted">Bulunamadı</span>`;
 
-  const dec = tp.decimals ?? 2;
-  const original = epicMinorToTry(tp.originalPrice, dec);
-  const discount = epicMinorToTry(tp.discountPrice, dec);
+  function render() {
+    const q = (elQ.value || "").trim().toLowerCase();
 
-  if(discount==null) return `<span class="muted">Bulunamadı</span>`;
-
-  if(original!=null && original > discount){
-    return `<div class="priceRow"><del class="old">${fmtTRY(original)}</del><span class="new">${fmtTRY(discount)}</span></div>`;
-  }
-  return `<span class="new">${fmtTRY(discount)}</span>`;
-}
-
-/** =========================
- *  STEAM FETCH (ÇÖKMEZ)
- *  =========================
- *  Senin worker farklı format döndürebilir.
- *  Bu fonksiyon olabildiğince çok formatı destekler.
- */
-async function fetchSteamAny(appId, cc="TR"){
-  try{
-    // Bazı kurulumlarda endpoint root olabilir (/?appid=...)
-    // Bazılarında /steam?appid=... olabilir.
-    // İkisini de deniyoruz.
-    const urls = [
-      `${WORKER_BASE}/?appid=${encodeURIComponent(appId)}&cc=${encodeURIComponent(cc)}`,
-      `${WORKER_BASE}/steam?appid=${encodeURIComponent(appId)}&cc=${encodeURIComponent(cc)}`
-    ];
-
-    for(const u of urls){
-      const r = await fetch(u);
-      if(!r.ok) continue;
-      const ct = r.headers.get("content-type") || "";
-      if(!ct.includes("application/json")) continue;
-      const j = await r.json();
-      // en azından bir alan varsa kabul edelim
-      return j;
+    let list = priced;
+    if (q) {
+      list = list.filter(x => (x.name || "").toLowerCase().includes(q));
     }
-    return { ok:false, error:"steam_endpoint_not_found" };
-  }catch(e){
-    return { ok:false, error:"steam_fetch_failed", message:String(e) };
-  }
-}
 
-/**
- * Steam JSON’undan:
- * - finalUsd (indirimli)
- * - originalUsd (indirimsiz)
- * çıkarır.
- *
- * Çıkamazsa: sadece final bulunur.
- */
-function normalizeSteam(steamJson){
-  // 1) Eğer bizim istediğimiz gibi dönüyorsa:
-  if(steamJson?.final_text){
-    return {
-      finalUsd: parseNumberFromText(steamJson.final_text),
-      originalUsd: parseNumberFromText(steamJson.original_text)
-    };
+    // En ucuz üste (final fiyat min)
+    list = list.slice().sort((a,b) => cheapest(a) - cheapest(b));
+
+    elGrid.innerHTML = list.map(cardHtml).join("");
   }
 
-  // 2) Eğer price_overview dönüyorsa (Steam appdetails gibi):
-  // price_overview: { final: 4999, initial: 9999, currency:"USD" } (minor units)
-  const po = steamJson?.price_overview || steamJson?.data?.price_overview;
-  if(po && (po.final!=null || po.initial!=null)){
-    // Steam minor units genelde 100 ile bölünür
-    const finalUsd = po.final!=null ? Number(po.final)/100 : null;
-    const originalUsd = po.initial!=null ? Number(po.initial)/100 : null;
-    return { finalUsd, originalUsd };
+  function cheapest(item) {
+    const s = item.steam?.available ? Number(item.steam.final_try) : Infinity;
+    // Epic TRY gelmezse bile çoğu TR'de TRY gelir; gelmezse gene gösteririz ama karşılaştırma TRY olmadığı için Infinity say.
+    const e = item.epic?.available && item.epic.currency === "TRY" ? Number(item.epic.final) : Infinity;
+    return Math.min(s, e);
   }
 
-  // 3) Eğer tek fiyat text olarak varsa:
-  if(steamJson?.steam_price_text){
-    return { finalUsd: parseNumberFromText(steamJson.steam_price_text), originalUsd: null };
-  }
+  function cardHtml(item) {
+    const name = esc(item.name || "Oyun");
 
-  // 4) Eğer tek fiyat numeric varsa:
-  if(steamJson?.steam_price!=null){
-    // steam_price numeric ise zaten USD olabilir
-    return { finalUsd: Number(steamJson.steam_price), originalUsd: null };
-  }
+    const steam = item.steam;
+    const epic = item.epic;
 
-  return { finalUsd:null, originalUsd:null };
-}
+    const steamPrice = formatStorePriceSteam(steam);
+    const epicPrice = formatStorePriceEpic(epic);
 
-function renderSteamPriceHTML(steamJson){
-  const n = normalizeSteam(steamJson);
-  const finalTry = usdToTryFixed(n.finalUsd);
-  const originalTry = usdToTryFixed(n.originalUsd);
+    const best = bestStore(item);
 
-  if(!finalTry) return `<span class="muted">Yok</span>`;
+    const steamBtnClass = best === "steam" ? "openbtn win" : "openbtn";
+    const epicBtnClass  = best === "epic"  ? "openbtn win" : "openbtn";
 
-  if(originalTry && originalTry > finalTry){
-    return `<div class="priceRow"><del class="old">${fmtTRY(originalTry)}</del><span class="new">${fmtTRY(finalTry)}</span></div>`;
-  }
-  return `<span class="new">${fmtTRY(finalTry)}</span>`;
-}
+    const steamUrl = `https://store.steampowered.com/app/${item.appid}/`;
+    const epicUrl = epic?.slug ? `https://store.epicgames.com/p/${epic.slug}` : `https://store.epicgames.com/en-US/browse?q=${encodeURIComponent(item.name || "")}`;
 
-/** =========================
- *  UI
- *  ========================= */
-function setMsg(t){ document.getElementById("msg").innerText = t; }
+    return `
+      <div class="card">
+        <div class="title">${name}</div>
 
-function steamLink(appId){ return `https://store.steampowered.com/app/${appId}/?l=turkish`; }
-function epicLink(slug){ return `https://store.epicgames.com/tr/p/${slug}`; }
+        <div class="row">
+          <div class="store">Steam</div>
+          <div class="price">${steamPrice}</div>
+        </div>
 
-function makeCard(game){
-  const card = document.createElement("div");
-  card.className = "card";
+        <div class="row">
+          <div class="store">Epic</div>
+          <div class="price">${epicPrice}</div>
+        </div>
 
-  card.innerHTML = `
-    <div class="row">
-      <div>
-        <div class="title">${escapeHtml(game.name)}</div>
+        <div class="btnrow">
+          <a class="${steamBtnClass}" href="${steamUrl}" target="_blank" rel="noopener">Steam'de Aç</a>
+          <a class="${epicBtnClass}" href="${epicUrl}" target="_blank" rel="noopener">Epic'de Aç</a>
+        </div>
+
+        <div class="tiny">Steam AppID: ${item.appid}</div>
       </div>
-      <div class="badge" style="display:none" data-badge>EN UCUZ</div>
-    </div>
+    `;
+  }
 
-    <div class="label">Steam</div>
-    <div data-steam class="muted">Yükleniyor...</div>
+  function bestStore(item) {
+    const sOk = item.steam?.available && !item.steam.is_free && Number(item.steam.final_try) > 0;
+    const eOk = item.epic?.available && item.epic.currency === "TRY" && Number(item.epic.final) > 0;
 
-    <div class="label">Epic</div>
-    <div data-epic class="muted">Yükleniyor...</div>
+    const s = sOk ? Number(item.steam.final_try) : Infinity;
+    const e = eOk ? Number(item.epic.final) : Infinity;
 
-    <div class="btns">
-      <a class="btn primary" href="${steamLink(game.steamAppId)}" target="_blank" rel="noreferrer">Steam'de Aç</a>
-      <a class="btn" href="${game.epicSlug ? epicLink(game.epicSlug) : "#"}" target="_blank" rel="noreferrer" style="${game.epicSlug ? "" : "opacity:.5;pointer-events:none"}">Epic'de Aç</a>
-    </div>
+    if (s === Infinity && e === Infinity) return null;
+    return s <= e ? "steam" : "epic";
+  }
 
-    <div class="small">Steam AppID: ${game.steamAppId}${game.epicSlug ? ` • Epic Slug: ${game.epicSlug}` : ""}</div>
-  `;
+  function formatStorePriceSteam(s) {
+    if (!s || !s.available || s.final_try == null) return `<span class="badge badge-miss">Yok</span>`;
 
-  return card;
-}
+    // indirim varsa: initial üstü çizili + badge
+    const hasDiscount = (s.discount_percent || 0) > 0 && s.initial_try > s.final_try;
 
-function escapeHtml(s){
-  return String(s)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
-/** fiyatları çekip karta bas (hata olsa bile kart kalır) */
-async function fillCardPrices(card, game, cc){
-  const steamEl = card.querySelector("[data-steam]");
-  const epicEl = card.querySelector("[data-epic]");
-
-  // Steam
-  const steamJson = await fetchSteamAny(game.steamAppId, cc);
-  steamEl.innerHTML = renderSteamPriceHTML(steamJson);
-
-  // Epic
-  const epicJson = await fetchEpic(game.epicSlug, cc, "tr");
-  epicEl.innerHTML = renderEpicPriceHTML(epicJson);
-
-  // “EN UCUZ” rozet (mümkünse)
-  // Steam/Epic TL değerlerini hesapla (bulamazsak pas geç)
-  const sN = normalizeSteam(steamJson);
-  const steamTl = usdToTryFixed(sN.finalUsd);
-
-  let epicTl = null;
-  if(epicJson?.ok){
-    const tp = epicJson.epic?.totalPrice;
-    if(tp){
-      epicTl = epicMinorToTry(tp.discountPrice ?? tp.originalPrice, tp.decimals ?? 2);
+    if (hasDiscount) {
+      return `
+        <span class="strike">${moneyTRY(s.initial_try)}</span>
+        <b>${moneyTRY(s.final_try)}</b>
+        <span class="badge badge-sale">%${s.discount_percent} indirim</span>
+      `;
     }
+    return `<b>${moneyTRY(s.final_try)}</b>`;
   }
 
-  const badge = card.querySelector("[data-badge]");
-  // İkisi de varsa karşılaştır
-  if(steamTl!=null && epicTl!=null){
-    badge.style.display = (epicTl < steamTl) ? "inline-block" : "none";
-  } else {
-    badge.style.display = "none";
-  }
-}
+  function formatStorePriceEpic(e) {
+    if (!e || !e.available) return `<span class="badge badge-miss">Bulunamadı</span>`;
 
-async function loadGames(){
-  const cc = document.getElementById("country").value;
-  const lim = Number(document.getElementById("limit").value);
-  const q = document.getElementById("search").value.trim().toLowerCase();
+    const cur = e.currency || "TRY";
+    const hasDiscount = (e.discount_percent || 0) > 0 && e.original > e.final;
 
-  let list = ALL_GAMES.slice();
-  if(q){
-    list = list.filter(g => g.name.toLowerCase().includes(q));
-  }
-  list = list.slice(0, lim);
+    // TRY değilse gene gösterelim ama kıyaslamada kullanmıyoruz
+    const fmt = (n) => cur === "TRY" ? moneyTRY(n) : `${Number(n).toFixed(2)} ${esc(cur)}`;
 
-  const grid = document.getElementById("grid");
-  grid.innerHTML = "";
-
-  setMsg("Steam + Epic fiyatları yükleniyor...");
-
-  // kartları bas
-  const cards = list.map(g => {
-    const c = makeCard(g);
-    grid.appendChild(c);
-    return { card:c, game:g };
-  });
-
-  // sırayla yükle (PC kötü demiştin, aynı anda 200 fetch kasabilir)
-  for(let i=0;i<cards.length;i++){
-    const {card, game} = cards[i];
-    try{
-      await fillCardPrices(card, game, cc);
-    }catch(e){
-      // asla beyaz kalmasın
-      const steamEl = card.querySelector("[data-steam]");
-      const epicEl = card.querySelector("[data-epic]");
-      steamEl.innerHTML = `<span class="muted">Hata</span>`;
-      epicEl.innerHTML = `<span class="muted">Hata</span>`;
+    if (hasDiscount) {
+      return `
+        <span class="strike">${fmt(e.original)}</span>
+        <b>${fmt(e.final)}</b>
+        <span class="badge badge-sale">%${e.discount_percent} indirim</span>
+      `;
     }
+    return `<b>${fmt(e.final)}</b>`;
   }
 
-  setMsg("Steam + Epic fiyatları yüklendi.");
-}
+  function moneyTRY(n) {
+    return new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Number(n) || 0);
+  }
 
-document.getElementById("loadBtn").addEventListener("click", loadGames);
-document.getElementById("search").addEventListener("keydown", (e)=>{ if(e.key==="Enter") loadGames(); });
-
-// sayfa açılınca otomatik yükle
-loadGames();
+  function esc(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 </script>
 </body>
 </html>
