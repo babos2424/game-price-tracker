@@ -4,64 +4,52 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Steam İndirimli Oyunlar</title>
-
 <style>
 body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
 .wrap{max-width:1100px;margin:0 auto;padding:20px}
 h1{margin:0 0 15px}
-.top{display:flex;gap:12px;align-items:center;margin-bottom:20px}
+.top{display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
 input{
-  flex:1;
-  padding:10px;
-  border-radius:10px;
-  border:1px solid #1d2a4a;
-  background:#111c3a;
-  color:white;
+  flex:1; min-width:220px;
+  padding:10px;border-radius:10px;border:1px solid #1d2a4a;
+  background:#111c3a;color:white;
 }
 .status{color:#8aa0c5}
-.grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
-  gap:14px;
-}
-.card{
-  background:#111c3a;
-  border:1px solid #1d2a4a;
-  border-radius:14px;
-  padding:14px;
-}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.card{background:#111c3a;border:1px solid #1d2a4a;border-radius:14px;padding:14px}
 .title{font-weight:700;margin-bottom:8px}
 .old{text-decoration:line-through;color:#8aa0c5;margin-right:8px}
 .btn{
-  display:block;
-  margin-top:10px;
-  text-align:center;
-  text-decoration:none;
-  color:white;
+  display:block;margin-top:10px;text-align:center;text-decoration:none;color:white;
+  border:1px solid #1d2a4a;padding:8px;border-radius:10px;
+}
+.badge{background:#22c55e;padding:3px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+.moreWrap{margin:14px 0}
+.moreBtn{
+  width:100%;
+  padding:12px;border-radius:12px;
+  background:#0f1a37;color:#fff;
   border:1px solid #1d2a4a;
-  padding:8px;
-  border-radius:10px;
+  cursor:pointer;font-weight:700;
 }
-.badge{
-  background:#22c55e;
-  padding:3px 6px;
-  border-radius:6px;
-  font-size:12px;
-  margin-left:6px;
-}
+.moreBtn:disabled{opacity:.55;cursor:not-allowed}
 </style>
 </head>
 
 <body>
 <div class="wrap">
-<h1>Steam İndirimli Oyunlar (USD)</h1>
+  <h1>Steam İndirimli Oyunlar (USD)</h1>
 
-<div class="top">
-<input id="search" placeholder="Oyun ara...">
-<div class="status" id="status">Yükleniyor...</div>
-</div>
+  <div class="top">
+    <input id="search" placeholder="Oyun ara...">
+    <div class="status" id="status">Yükleniyor...</div>
+  </div>
 
-<div class="grid" id="grid"></div>
+  <div class="moreWrap">
+    <button class="moreBtn" id="moreBtn" disabled>+ Daha Fazla Yükle</button>
+  </div>
+
+  <div class="grid" id="grid"></div>
 </div>
 
 <script>
@@ -69,11 +57,16 @@ const API="https://steam-price-api.celikelbatuhan02.workers.dev";
 const grid=document.getElementById("grid");
 const statusEl=document.getElementById("status");
 const search=document.getElementById("search");
+const moreBtn=document.getElementById("moreBtn");
 
-let all=[];
-let renderTimer;
+let all=[];           // tüm oyunlar
+let shown=[];         // ekranda gösterilen
+let ids=[];           // topseller id listesi
+let pageCount=4;      // 4 sayfa = 200 id
+let loadIndex=0;      // ids üzerinde batch ilerleme
 
 function money(v,c){
+  if(v==null || !Number.isFinite(Number(v))) return "—";
   return Number(v).toFixed(2)+" "+c;
 }
 
@@ -84,7 +77,7 @@ function addCard(g){
 
   card.innerHTML=`
     <div class="title">
-      ${g.name}
+      ${escapeHTML(g.name)}
       <span class="badge">-${g.steam.discount}%</span>
     </div>
     <div>
@@ -96,71 +89,119 @@ function addCard(g){
       Steam'e Git
     </a>
   `;
-
   grid.appendChild(card);
+}
+
+function escapeHTML(str){
+  return String(str).replace(/[&<>"']/g, s => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[s]));
+}
+
+function render(list){
+  grid.innerHTML="";
+  list.forEach(addCard);
 }
 
 function filter(){
   const q=search.value.toLowerCase().trim();
   const cards=grid.children;
-
   for(let i=0;i<cards.length;i++){
     const name=cards[i].dataset.name;
     cards[i].style.display=(!q||name.includes(q))?"block":"none";
   }
 }
 
+let filterTimer;
 search.addEventListener("input",()=>{
-  clearTimeout(renderTimer);
-  renderTimer=setTimeout(filter,120);
+  clearTimeout(filterTimer);
+  filterTimer=setTimeout(filter,120);
 });
 
-async function load(){
-
-  statusEl.textContent="Liste alınıyor...";
-
-  let ids=[];
-
-  // 4 sayfa = 200 oyun
-  for(let i=0;i<4;i++){
-    const r=await fetch(`${API}/steam/list?start=${i*50}`);
-    const j=await r.json();
-    if(j.ok) ids.push(...j.appids);
+async function fetchJSON(url, timeoutMs=15000){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), timeoutMs);
+  try{
+    const r = await fetch(url, { signal: ctrl.signal });
+    return await r.json();
+  }finally{
+    clearTimeout(t);
   }
+}
 
-  statusEl.textContent="İndirimli oyunlar yükleniyor...";
+async function getIds(){
+  statusEl.textContent="Top sellers listesi alınıyor...";
+  const out=[];
+  for(let i=0;i<pageCount;i++){
+    const j = await fetchJSON(`${API}/steam/list?start=${i*50}`).catch(()=>null);
+    if(j && j.ok && Array.isArray(j.appids)) out.push(...j.appids);
+  }
+  // unique
+  ids=[...new Set(out)];
+}
 
-  const concurrency=12;
-  let index=0;
+async function loadNextBatch(){
+  // 25'lik paketler halinde çekiyoruz (worker da 25 limitli)
+  const BATCH=25;
 
-  async function worker(){
-    while(index<ids.length){
-      const id=ids[index++];
-      const r=await fetch(`${API}/steam/price?appid=${id}`);
-      const j=await r.json().catch(()=>null);
+  const slice = ids.slice(loadIndex, loadIndex+BATCH);
+  loadIndex += slice.length;
 
-      if(!j||!j.ok) continue;
+  if(slice.length===0) return false;
 
-      all.push(j);
-      addCard(j);
+  statusEl.textContent=`Fiyatlar alınıyor... (${Math.min(loadIndex, ids.length)}/${ids.length})`;
 
-      statusEl.textContent="Toplam "+all.length+" oyun";
+  const j = await fetchJSON(`${API}/steam/prices?ids=${slice.join(",")}`, 20000).catch(()=>null);
+  if(j && j.ok && Array.isArray(j.games)){
+    for(const g of j.games){
+      if(g && g.ok && g.steam && g.steam.discount>0){
+        all.push(g);
+      }
     }
   }
 
-  await Promise.all(Array(concurrency).fill(0).map(worker));
+  // indirim yüzdesine göre sırala
+  all.sort((a,b)=> (b.steam.discount||0) - (a.steam.discount||0));
 
-  // indirim yüzdesine göre sırala (yükleme sonrası)
-  all.sort((a,b)=>b.steam.discount-a.steam.discount);
-
-  grid.innerHTML="";
-  all.forEach(addCard);
-
-  statusEl.textContent="Toplam "+all.length+" indirimli oyun";
+  return true;
 }
 
-load();
-</script>
+async function init(){
+  try{
+    await getIds();
 
+    // ilk açılışta 2 batch (50 oyun max) – mobil hızlı açılır
+    await loadNextBatch();
+    await loadNextBatch();
+
+    shown = all.slice(0, 80); // ekranda önce 80 göster
+    render(shown);
+
+    statusEl.textContent = `Toplam ${all.length} indirimli oyun (Listede ${ids.length} oyun var)`;
+    moreBtn.disabled = false;
+
+  }catch(e){
+    statusEl.textContent="Hata: API yanıt vermedi (mobilde engel/timeout olabilir).";
+    moreBtn.disabled = true;
+  }
+}
+
+moreBtn.addEventListener("click", async ()=>{
+  moreBtn.disabled = true;
+  const ok = await loadNextBatch();
+
+  // yeni verilerle gösterimi güncelle
+  shown = all.slice(0, Math.min(all.length, shown.length + 60));
+  render(shown);
+  filter();
+
+  statusEl.textContent = `Toplam ${all.length} indirimli oyun (Gösterilen ${shown.length})`;
+
+  // bitmediyse tekrar enable
+  if(ok) moreBtn.disabled = false;
+});
+
+init();
+</script>
 </body>
 </html>
