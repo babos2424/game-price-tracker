@@ -44,7 +44,6 @@ function money(v,c){
   if(!Number.isFinite(n)) return "— "+(c||"TRY");
   return n.toFixed(2)+" "+(c||"TRY");
 }
-
 function bestStoreClass(steamFinal, epicFinal){
   const s=Number(steamFinal), e=Number(epicFinal);
   if(!Number.isFinite(s) && !Number.isFinite(e)) return {steam:false, epic:false};
@@ -79,78 +78,9 @@ async function getSteam(appid){
   const r = await fetch(`${API}/steam/price?appid=${appid}`, {cache:"no-store"});
   return await r.json().catch(()=>null);
 }
-
-// ✅ EPIC OTOMATİK (GraphQL)
-async function getEpicAuto(queryName){
-  try{
-    const body = {
-      query: `
-        query searchStoreQuery($keywords: String!) {
-          Catalog {
-            searchStore(
-              country: "TR",
-              locale: "tr",
-              keywords: $keywords,
-              count: 1
-            ) {
-              elements {
-                title
-                productSlug
-                urlSlug
-                price(country: "TR") {
-                  totalPrice {
-                    discountPrice
-                    originalPrice
-                    currencyCode
-                  }
-                }
-              }
-            }
-          }
-        }
-      `,
-      variables: { keywords: queryName }
-    };
-
-    const r = await fetch("https://store.epicgames.com/graphql", {
-      method:"POST",
-      headers:{ "content-type":"application/json" },
-      body: JSON.stringify(body)
-    });
-
-    const j = await r.json().catch(()=>null);
-    const el = j?.data?.Catalog?.searchStore?.elements?.[0];
-    if(!el) return {ok:false};
-
-    const tp = el.price?.totalPrice;
-    if(!tp) return {ok:false};
-
-    const final = Number(tp.discountPrice)/100;
-    const initial = Number(tp.originalPrice)/100;
-
-    let discount = 0;
-    if(initial > 0 && Number.isFinite(final) && Number.isFinite(initial)){
-      discount = Math.round((1 - final/initial)*100);
-      if(discount < 0) discount = 0;
-      if(discount > 99) discount = 99;
-    }
-
-    const slug = el.productSlug || el.urlSlug;
-
-    return {
-      ok:true,
-      epic:{
-        currency: tp.currencyCode || "TRY",
-        final,
-        initial,
-        discount
-      },
-      epic_url: slug ? `https://store.epicgames.com/p/${slug}` : null
-    };
-
-  }catch{
-    return {ok:false};
-  }
+async function getEpicAuto(name){
+  const r = await fetch(`${API}/epic/auto?name=${encodeURIComponent(name)}`, {cache:"no-store"});
+  return await r.json().catch(()=>null);
 }
 
 async function boot(){
@@ -158,7 +88,6 @@ async function boot(){
   grid.innerHTML = "";
 
   const cards = new Map();
-
   for(const g of GAMES){
     const c = cardSkeleton(g);
     grid.appendChild(c);
@@ -168,11 +97,7 @@ async function boot(){
 
   await Promise.all(GAMES.map(async (g)=>{
     const c = cards.get(g.steam_appid);
-
-    const [steam, epic] = await Promise.all([
-      getSteam(g.steam_appid),
-      getEpicAuto(g.epic_query)
-    ]);
+    const [steam, epic] = await Promise.all([ getSteam(g.steam_appid), getEpicAuto(g.epic_query) ]);
 
     // Steam render
     const steamRow = c.querySelector('[data-steam="row"]');
@@ -202,10 +127,7 @@ async function boot(){
     }
 
     // En ucuzu yeşil
-    const best = bestStoreClass(
-      Number(steam?.steam?.final),
-      Number(epic?.epic?.final)
-    );
+    const best = bestStoreClass(Number(steam?.steam?.final), Number(epic?.epic?.final));
     const steamPill = c.querySelector('[data-steam="row"] .pill');
     const epicPill = c.querySelector('[data-epic="row"] .pill');
     if(steamPill && best.steam) steamPill.classList.add("green");
