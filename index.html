@@ -6,37 +6,19 @@
 <title>Oyun Fiyat Takip</title>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial,Helvetica,sans-serif;
-  background:#0b1222;
-  color:#eaf0ff;
-}
-.wrap{
-  max-width:1100px;
-  margin:0 auto;
-  padding:22px;
-}
-h1{margin:0 0 10px}
-.top{
-  display:flex;
-  gap:12px;
-  align-items:center;
-  margin-bottom:20px;
-}
+body{margin:0;font-family:Arial;background:#0b1222;color:#eaf0ff}
+.wrap{max-width:1100px;margin:0 auto;padding:20px}
+h1{margin:0 0 15px}
+.top{display:flex;gap:12px;align-items:center;margin-bottom:20px}
 input{
   flex:1;
   padding:10px;
   border-radius:10px;
   border:1px solid #1d2a4a;
-  background:#0f1a33;
+  background:#111c3a;
   color:white;
 }
-.status{
-  color:#8aa0c5;
-  min-width:150px;
-  text-align:right;
-}
+.status{color:#8aa0c5}
 .grid{
   display:grid;
   grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
@@ -48,15 +30,8 @@ input{
   border-radius:14px;
   padding:14px;
 }
-.title{
-  font-weight:700;
-  margin-bottom:8px;
-}
-.old{
-  text-decoration:line-through;
-  color:#8aa0c5;
-  margin-right:8px;
-}
+.title{font-weight:700;margin-bottom:8px}
+.old{text-decoration:line-through;color:#8aa0c5;margin-right:8px}
 .btn{
   display:block;
   margin-top:10px;
@@ -67,17 +42,12 @@ input{
   padding:8px;
   border-radius:10px;
 }
-.loader{
-  text-align:center;
-  padding:30px;
-  color:#8aa0c5;
-}
 </style>
 </head>
 
 <body>
 <div class="wrap">
-<h1>Oyun Fiyat Takip</h1>
+<h1>İndirimli Steam Oyunları</h1>
 
 <div class="top">
 <input id="search" placeholder="Oyun ara...">
@@ -85,43 +55,31 @@ input{
 </div>
 
 <div class="grid" id="grid"></div>
-<div class="loader" id="loader">Aşağı kaydırdıkça yüklenir...</div>
-
 </div>
 
 <script>
 const API="https://steam-price-api.celikelbatuhan02.workers.dev";
 const grid=document.getElementById("grid");
 const statusEl=document.getElementById("status");
-const loader=document.getElementById("loader");
 const search=document.getElementById("search");
 
 let all=[];
-let page=0;
-let loading=false;
-let finished=false;
+let renderTimeout;
 
-function money(v,c){
-  return Number(v).toFixed(2)+" "+c;
-}
+function money(v,c){ return Number(v).toFixed(2)+" "+c; }
 
 function render(){
   const q=search.value.toLowerCase().trim();
   const list=q?all.filter(x=>x.name.toLowerCase().includes(q)):all;
 
-  // indirimli üste
-  list.sort((a,b)=>b.steam.discount-a.steam.discount);
-
   grid.innerHTML="";
-  list.forEach(g=>{
+  for(const g of list){
     const card=document.createElement("div");
     card.className="card";
-
     card.innerHTML=`
       <div class="title">${g.name}</div>
       <div>
-        ${g.steam.discount>0?
-          `<span class="old">${money(g.steam.initial,g.steam.currency)}</span>`:""}
+        <span class="old">${money(g.steam.initial,g.steam.currency)}</span>
         ${money(g.steam.final,g.steam.currency)}
       </div>
       <a class="btn" target="_blank"
@@ -130,61 +88,59 @@ function render(){
       </a>
     `;
     grid.appendChild(card);
-  });
+  }
 
-  statusEl.textContent="Toplam "+all.length+" oyun";
+  statusEl.textContent="Toplam "+list.length+" indirimli oyun";
 }
 
-async function loadMore(){
-  if(loading||finished) return;
-  loading=true;
-  loader.textContent="Yükleniyor...";
+search.addEventListener("input",()=>{
+  clearTimeout(renderTimeout);
+  renderTimeout=setTimeout(render,150);
+});
 
-  try{
-    const listRes=await fetch(`${API}/steam/list?start=${page*50}`);
-    const listJson=await listRes.json();
+async function load(){
+  statusEl.textContent="Liste alınıyor...";
+  let ids=[];
 
-    if(!listJson.ok || !listJson.appids.length){
-      finished=true;
-      loader.textContent="Daha fazla oyun yok.";
-      return;
-    }
+  // 5 sayfa = 250 oyun
+  for(let i=0;i<5;i++){
+    const r=await fetch(`${API}/steam/list?start=${i*50}`);
+    const j=await r.json();
+    if(j.ok) ids.push(...j.appids);
+  }
 
-    for(const id of listJson.appids){
+  statusEl.textContent="İndirimli oyunlar taranıyor...";
+
+  // paralel hız
+  const concurrency=10;
+  let index=0;
+
+  async function worker(){
+    while(index<ids.length && all.length<150){
+      const id=ids[index++];
       const r=await fetch(`${API}/steam/price?appid=${id}`);
       const j=await r.json().catch(()=>null);
       if(!j||!j.ok) continue;
+
+      // DLC filtre
       if(!j.name||!j.steam) continue;
+
+      // sadece indirimli
+      if(j.steam.discount<=0) continue;
 
       all.push(j);
     }
-
-    page++;
-    render();
-  }
-  catch(e){
-    console.log(e);
   }
 
-  loading=false;
-  loader.textContent="Aşağı kaydırdıkça yüklenir...";
+  await Promise.all(Array(concurrency).fill(0).map(worker));
+
+  // indirim oranına göre sırala
+  all.sort((a,b)=>b.steam.discount-a.steam.discount);
+
+  render();
 }
 
-// Scroll garantili
-window.addEventListener("scroll",()=>{
-  const scrollBottom = window.innerHeight + window.scrollY;
-  const pageHeight = document.documentElement.scrollHeight;
-
-  if(pageHeight - scrollBottom < 500){
-    loadMore();
-  }
-});
-
-search.addEventListener("input",render);
-
-// İlk yüklemede 2 sayfa otomatik
-loadMore();
-setTimeout(loadMore,1000);
+load();
 </script>
 
 </body>
